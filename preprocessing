@@ -21,6 +21,9 @@ sns.set_palette(ibm_colorblind)
 
 import argparse
 
+### Run with python preprocessing.py --clean_option "remove_day" --use_transition_matrix --make_reciprocal --threshold 0.05 --occurence_threshold 1 --seed 2025 --negative_sample_size 3
+
+
 def get_args():
     parser = argparse.ArgumentParser(description="Configuration for transition matrix processing.")
 
@@ -57,7 +60,7 @@ args = get_args()
 print(args)
 
 # Set directory
-%cd /content/TIHM-Dataset-Visualization
+#%cd /content/TIHM-Dataset-Visualization
 DPATH = './Data'
 SAVE_PATH = './Figs/'
 if not os.path.exists(SAVE_PATH):

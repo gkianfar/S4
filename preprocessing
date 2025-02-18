@@ -1,0 +1,66 @@
+
+import pandas as pd
+import matplotlib.pyplot as plt
+import numpy as np
+import random
+import seaborn as sns
+from matplotlib import cm
+import matplotlib.patches as mpatches
+from collections.abc import Iterable
+from sklearn.preprocessing import StandardScaler
+import os
+import warnings
+warnings.filterwarnings('ignore')
+
+%matplotlib inline
+## Set colour palette
+ibm_colorblind = ['#648FFF', '#FE6100', '#DC267F', '#785EF0', '#FFB000','#48A9A6']
+sns.set_palette(ibm_colorblind)
+
+
+activity_df, physiology_df, sleep_df, sleep_df, demographics_df = load_datasets(DPATH)
+
+activity_df = activity_df.drop_duplicates()
+physiology_df = physiology_df.drop_duplicates()
+sleep_df = sleep_df.drop_duplicates()
+
+# Removing simultaneous activities by a patient
+clean_option = 'remove_day' # last, 'remove_all'
+use_transition_matrix = True
+make_reciprocal = True
+threshold = 0.03  # values lower than this will be considered as impossible transition
+occurence_threshold = 0  # the minimum value of occurence for each day to be droped
+
+from datetime import datetime
+
+if clean_option == 'remove_day':
+  duplicate_days = activity_df[['date','patient_id']][~activity_df.duplicated(subset=['patient_id', 'timestamp'], keep='first')]
+  patients = duplicate_days['patient_id'].unique()
+  dates = duplicate_days['date']
+  for p, d in zip(patients,dates):
+    activity_df = activity_df.drop(activity_df[(activity_df['patient_id']==p) & (activity_df['date']==d)].index)
+    activity_df.reset_index(drop=True, inplace=True)
+
+    labels_df = labels_df.drop(labels_df[(sleep_df['patient_id']==p) & (labels_df['date']==d)].index)
+    labels_df.reset_index(drop=True, inplace=True)
+
+  if use_transition_matrix:
+    current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
+    print(f'transition matrix start: {current_time}')
+    transition_matrix, state_map_reverse = get_transition_matrix(activity_df,make_reciprocal)
+    current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
+    print(f'transition matrix end and impossible block start: {current_time}')
+    impossible_activity_count = get_impossible_count(activity_df,transition_matrix,threshold,occurence_threshold)
+    current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
+    print(f'drop loop start start: {current_time}')
+    for k, v in impossible_activity_count.items():
+      days_with_visitor, _ = zip(*v)
+      activity_df.drop(activity_df[(activity_df['patient_id']==k) & (activity_df['date'].isin(days_with_visitor))].index, inplace=True)
+      activity_df.reset_index(drop=True, inplace=True)
+      labels_df.drop(labels_df[(labels_df['patient_id']==k) & (labels_df['date'].isin(days_with_visitor))].index, inplace=True)
+      labels_df.reset_index(drop=True, inplace=True)
+
+else:
+  print('No /cleaning')
+
+activity_df.reset_index(drop=True, inplace=True)

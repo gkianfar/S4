@@ -1,4 +1,3 @@
-
 import pandas as pd
 import matplotlib.pyplot as plt
 import numpy as np
@@ -10,6 +9,9 @@ from collections.abc import Iterable
 from sklearn.preprocessing import StandardScaler
 import os
 import warnings
+from utils import *
+from datetime import datetime
+
 warnings.filterwarnings('ignore')
 
 %matplotlib inline
@@ -17,26 +19,68 @@ warnings.filterwarnings('ignore')
 ibm_colorblind = ['#648FFF', '#FE6100', '#DC267F', '#785EF0', '#FFB000','#48A9A6']
 sns.set_palette(ibm_colorblind)
 
+import argparse
 
+def get_args():
+    parser = argparse.ArgumentParser(description="Configuration for transition matrix processing.")
+
+    # Cleaning option
+    parser.add_argument("--clean_option", type=str, default=["remove_day", "remove_all"], default="remove_day",
+                        help="Cleaning option: 'remove_day' or 'remove_all'.")
+
+    # Boolean flags for transition matrix usage
+    parser.add_argument("--use_transition_matrix", type=bool, default=False, 
+                    help="Enable or disable the use of transition matrix (default: True).")
+
+    parser.add_argument("--make_reciprocal", type=bool, default=False, 
+                    help="Set to True to make the transition matrix reciprocal (default: True).")
+
+
+    # Thresholds
+    parser.add_argument("--threshold", type=float, default=0.03,
+                        help="Values lower than this will be considered as impossible transitions.")
+    parser.add_argument("--occurence_threshold", type=int, default=0,
+                        help="The minimum occurrence value for each day to be dropped.")
+
+    # Random seed
+    parser.add_argument("--seed", type=int, default=2025,
+                        help="Set the seed value for reproducibility.")
+
+    # Negative sample size
+    parser.add_argument("--negative_sample_size", type=int, default=1,
+                        help="Set the number of negative samples per positive sample.")
+
+    return parser.parse_args(args=[] if "__file__" not in globals() else None)  # Fix for Jupyter Notebooks
+
+
+args = get_args()
+print(args)
+
+# Set directory
+%cd /content/TIHM-Dataset-Visualization
+DPATH = './Data'
+SAVE_PATH = './Figs/'
+if not os.path.exists(SAVE_PATH):
+    os.makedirs(SAVE_PATH)
+
+# Load raw datasets
 activity_df, physiology_df, sleep_df, sleep_df, demographics_df = load_datasets(DPATH)
+sleep_patients = np.unique(sleep_df['patient_id'])
+activity_patients = np.unique(activity_df['patient_id'])
+physiology_patients = np.unique(physiology_df['patient_id'])
+physiology_parameters = np.unique(df['device_type'])
 
+
+# Clean data
 activity_df = activity_df.drop_duplicates()
 physiology_df = physiology_df.drop_duplicates()
 sleep_df = sleep_df.drop_duplicates()
-
-# Removing simultaneous activities by a patient
-clean_option = 'remove_day' # last, 'remove_all'
-use_transition_matrix = True
-make_reciprocal = True
-threshold = 0.03  # values lower than this will be considered as impossible transition
-occurence_threshold = 0  # the minimum value of occurence for each day to be droped
-
-from datetime import datetime
 
 if clean_option == 'remove_day':
   duplicate_days = activity_df[['date','patient_id']][~activity_df.duplicated(subset=['patient_id', 'timestamp'], keep='first')]
   patients = duplicate_days['patient_id'].unique()
   dates = duplicate_days['date']
+
   for p, d in zip(patients,dates):
     activity_df = activity_df.drop(activity_df[(activity_df['patient_id']==p) & (activity_df['date']==d)].index)
     activity_df.reset_index(drop=True, inplace=True)
@@ -59,8 +103,246 @@ if clean_option == 'remove_day':
       activity_df.reset_index(drop=True, inplace=True)
       labels_df.drop(labels_df[(labels_df['patient_id']==k) & (labels_df['date'].isin(days_with_visitor))].index, inplace=True)
       labels_df.reset_index(drop=True, inplace=True)
-
 else:
-  print('No /cleaning')
+  print('No cleaning')
 
 activity_df.reset_index(drop=True, inplace=True)
+activity_df['location_name'] = activity_df['location_name'].map(state_map_reverse)
+
+
+# Print a sample of transition matrix
+print('Patient ec812 TM:')
+print(f'row-wise sum: {np.sum(transition_matrix['ec812'],axis=1)}')
+print(transition_matrix['ec812'])
+
+## Data arrangement
+# Missing data filling approach for physiology data (Currently, just filling
+# with average value on all normal days is considered)
+if_fill_physiology = True
+fill_type = 'average_all_normal_days'
+
+# Observation backward time-window for activities
+interval = 6 # backward Time Window
+
+# True if all past and future normal samples are consideredfor degree calculation,
+# otherwise it considers only past
+#params
+non_agit_observe_all = True
+observation_window = 14 # active when non_agit_observe_all = False
+observation_window = pd.Timedelta(days=observation_window) # The reason is that we want to limit the window for each sample to make comparisons more meaningful
+
+# Set seed for Python's and Numpy's random modules
+random.seed(seed)
+np.random.seed(seed)
+
+# Average physiology parameters in general in case a patient don't have these measurements at all
+avg_params = {
+    'Body Temperature':36.0,
+    'Body weight':70.0,
+    'Diastolic blood pressure':80.0,
+    'Heart rate':90.0,
+    'O/E - muscle mass':40.0,
+    'Skin Temperature':35.0,
+    'Systolic blood pressure':160.0,
+    'Total body water':50.0
+}
+
+#  Filter agitation samples to discover the patients with agitation
+agitation_df = labels_df[labels_df['label']=='Agitation'].copy()
+agitation_patientID = agitation_df['patient_id'].tolist()
+
+# Set observation window duration for activities and determine start time of observation window for each agitation sample
+agitation_endTime = agitation_df['timestamp'].tolist()
+agitation_startTime = pd.to_datetime(agitation_endTime) - pd.Timedelta(hours=interval)
+agitation_startTime = agitation_startTime.tolist()
+
+# Find the number of agitation samples associated with each patient in agitation dataframe
+agitation_patients = np.unique(agitation_df['patient_id'])
+each_patient_agitation_sample = agitation_df['patient_id'].value_counts()
+
+# Store the dates for available agitation label, activity, and physiological measurements per patient
+agitation_days = {}
+activity_days = {}
+physiology_days = {}
+
+# Loop through the datasets to collect required data
+for id in agitation_patients:
+   agitation_days[id] = agitation_df['date'][agitation_df['patient_id'] == id].unique()
+   activity_days[id] = activity_df['date'][activity_df['patient_id'] == id].unique()
+   physiology_days[id] = physiology_df['date'][physiology_df['patient_id'] == id].unique()
+
+
+agitation_dataset = []
+non_agitation_dataset = []
+
+# Iterate through each patient_id, start_time, and end_time
+for index, (patient_id, start_time, end_time) in enumerate(zip(agitation_patientID, agitation_startTime, agitation_endTime)):
+
+    ## demographics data
+    patient_age = demographics_df[demographics_df['patient_id']==patient_id]['age'].values[0]
+    patient_sex = demographics_df[demographics_df['patient_id']==patient_id]['sex'].values[0]
+
+    patient_agit_days = agitation_days[patient_id]
+    patient_activity_days = activity_days[patient_id]
+    patient_non_agit_days = np.array([date for date in patient_activity_days if date not in patient_agit_days])
+    patient_physiology_days = physiology_days[patient_id]
+    patient_non_agit_physio_days = [date for date in patient_non_agit_days if date in patient_physiology_days]
+
+
+    print(f'{index}-user: {patient_id} - from {start_time} to {end_time}')
+
+    # Filter the DataFrame for the current patient and time range
+    filtered_df = activity_df[(activity_df['patient_id'] == patient_id) &
+                            (activity_df['timestamp'] >= start_time) &
+                            (activity_df['timestamp'] <= end_time)]
+
+    # Store the results in the list
+    agit_activity = filtered_df['location_name'].tolist()
+
+
+    if non_agit_observe_all:
+      patient_observed_non_agit_days = patient_non_agit_days.copy()
+    else:
+      patient_observed_non_agit_days = patient_non_agit_days[((end_time.date() - observation_window) <patient_non_agit_days)
+                                                             & (patient_non_agit_days<end_time.date())]
+
+    agit_weekday = pd.Timestamp(end_time).day_name()
+
+    # separate the corresponding non agitation intervals from normal days of each patient
+    observed_non_agit_activity = []
+    for d in patient_observed_non_agit_days:
+      if start_time.time() < end_time.time():
+        filtered_df = activity_df[(activity_df['patient_id'] == patient_id) &
+                                  (activity_df['date'] == d) &
+                                  (activity_df['time'] >= start_time.time()) &
+                                  (activity_df['time'] <= end_time.time())]
+      else:
+        raise Exception("Start time is after end time")
+
+
+      observed_non_agit_activity.append(filtered_df['location_name'].tolist())
+    #print(f' observed size: {len(observed_non_agit_activity)}')
+
+    ### physiology parameters
+    agit_params = []
+    agit_physio_df = physiology_df[(physiology_df['patient_id']==patient_id) & (physiology_df['date']==end_time.date())]
+    agit_unique_params = agit_physio_df['device_type'].unique().tolist()
+
+    ### for agitation samples
+    for param in physiology_parameters:
+        if (param in agit_unique_params):
+            agit_params.append((param,agit_physio_df['value'][agit_physio_df['device_type'] == param].mean()))
+            #print('value exists')
+        else:
+            #print('no value')
+            if if_fill_physiology:
+
+              if fill_type == 'average_all_normal_days':
+
+                selected_physio_to_fill = physiology_df['value'][(physiology_df['patient_id']==patient_id) &
+                  (physiology_df['device_type'] == param) & (physiology_df['date'].isin(patient_non_agit_physio_days))].tolist()
+
+                value = avg_params[param] if not selected_physio_to_fill else np.mean(selected_physio_to_fill)
+              else:
+                raise Exception("Fill type not supported")
+
+            else:
+              print('Filled with NaN')
+              value = None
+
+            agit_params.append((param,value))
+
+
+    agitation_dataset.append([patient_id, start_time, end_time, agit_activity, observed_non_agit_activity, agit_params, patient_age, patient_sex, agit_weekday])
+
+
+    ## Now we want to perform negative sampling from all non agit days within the same time period
+
+    if len(patient_non_agit_days) > 0:
+        sampled_non_agit_days = np.random.choice(patient_non_agit_days, size=min(negative_sample_size, len(patient_non_agit_days)), replace=False)
+    else:
+        sampled_non_agit_days = []
+
+    for day in sampled_non_agit_days:
+
+      # The same time start and end but in a different day
+      start_time_non_agit = pd.Timestamp.combine(day, start_time.time())
+      end_time_non_agit = pd.Timestamp.combine(day, end_time.time())
+
+      print(f'\t non-agit: {patient_id} - from {start_time_non_agit} to {end_time_non_agit}')
+
+      # Filter the DataFrame for the current patient and time range
+      filtered_df = activity_df[(activity_df['patient_id'] == patient_id) &
+                              (activity_df['timestamp'] >= start_time_non_agit) &
+                              (activity_df['timestamp'] <= end_time_non_agit)]
+
+      # Store the results in the list
+      non_agit_activity = filtered_df['location_name'].tolist()
+
+      if non_agit_observe_all:
+        patient_observed_non_agit_days = patient_non_agit_days.copy()
+        # In this case, we do not need to recalculate observed_non_agit_activity
+      else:
+        patient_observed_non_agit_days = patient_non_agit_days[((day - observation_window)<patient_non_agit_days)
+                                                             & (patient_non_agit_days<day)]
+        # separate the corresponding non agitation intervals from normal days of each patient
+        observed_non_agit_activity = []
+        for d in patient_observed_non_agit_days:
+          if start_time.time() < end_time.time():
+            filtered_df = activity_df[(activity_df['patient_id'] == patient_id) &
+                                      (activity_df['date'] == d) &
+                                      (activity_df['time'] >= start_time.time()) &
+                                      (activity_df['time'] <= end_time.time())]
+          else:
+            raise Exception("Start time is after end time")
+        observed_non_agit_activity.append(filtered_df['location_name'].tolist())
+
+      non_agit_weekday = pd.Timestamp(end_time_non_agit).day_name()
+
+      print(f' observed size: {len(observed_non_agit_activity)}')
+
+
+      non_agit_params = []
+      non_agit_physio_df = physiology_df[(physiology_df['patient_id']==patient_id) & (physiology_df['date']==day)]
+      non_agit_unique_params = non_agit_physio_df['device_type'].unique().tolist()
+
+      for param in physiology_parameters:
+          if (param in non_agit_unique_params):
+              non_agit_params.append((param,non_agit_physio_df['value'][non_agit_physio_df['device_type'] == param].mean()))
+              print('value exists')
+          else:
+              print('No value')
+              if if_fill_physiology:
+
+                if fill_type == 'average_all_normal_days':
+
+                  selected_physio_to_fill = physiology_df['value'][(physiology_df['patient_id']==patient_id) &
+                    (physiology_df['device_type'] == param) & (physiology_df['date'].isin(patient_non_agit_physio_days))].tolist()
+
+                  value = avg_params[param] if not selected_physio_to_fill else np.mean(selected_physio_to_fill)
+                else:
+                  raise Exception("Fill type not supported")
+
+              else:
+                print('Filled with NaN')
+                value = None
+
+              non_agit_params.append((param,value))
+
+      # Append to non_agitation_dataset.
+      non_agitation_dataset.append([patient_id, start_time_non_agit, end_time_non_agit, non_agit_activity, observed_non_agit_activity, non_agit_params, patient_age, patient_sex, non_agit_weekday])
+
+
+# Save the datasets
+if use_transition_matrix:
+    if make_reciprocal:
+       agit_path = f'/content/drive/MyDrive/datasets/agitation_dataset_tm{threshold}_rec_clean.pkl'
+       non_agit_path = f'/content/drive/MyDrive/datasets/non_agitation_dataset_tm{threshold}_rec_clean.pkl'
+    else: 
+       agit_path = f'/content/drive/MyDrive/datasets/agitation_dataset_tm{threshold}_clean.pkl'
+       non_agit_path = f'/content/drive/MyDrive/datasets/non_agitation_dataset_tm{threshold}_clean.pkl'
+else:
+    pickle.dump(agitation_dataset,open(f'/content/drive/MyDrive/datasets/agitation_dataset_simple}_clean.pkl','wb'))
+    pickle.dump(non_agitation_dataset,open(f'/content/drive/MyDrive/datasets/non_agitation_dataset_simple_clean.pkl','wb'))
+
+

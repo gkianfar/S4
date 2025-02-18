@@ -159,6 +159,7 @@ def get_transition_matrix(activity_df, make_reciprocal=False):
     if make_reciprocal:
       for p in patients:
           transition_matrix[p] = np.minimum(transition_matrix[p], transition_matrix[p].T)
+          transition_matrix[p] = transition_matrix[p] / np.sum(transition_matrix[p], axis=1, keepdims=True)
 
     return transition_matrix, state_map_reverse
 

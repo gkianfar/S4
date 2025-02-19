@@ -127,6 +127,11 @@ if clean:
       labels_df.drop(labels_df[(labels_df['patient_id']==k) & (labels_df['date'].isin(days_with_visitor))].index, inplace=True)
       labels_df.reset_index(drop=True, inplace=True)
     activity_df['location_name'] = activity_df['location_name'].map(state_map_reverse)
+    # Print a sample of transition matrix
+    print('Patient ec812 TM:')
+    s = np.sum(transition_matrix['ec812'],axis=1)
+    print(f'row-wise sum: {s}')
+    print(transition_matrix['ec812'])
 else:
   print('No cleaning')
 
@@ -134,11 +139,7 @@ activity_df.reset_index(drop=True, inplace=True)
 
 
 
-# Print a sample of transition matrix
-print('Patient ec812 TM:')
-s = np.sum(transition_matrix['ec812'],axis=1)
-print(f'row-wise sum: {s}')
-print(transition_matrix['ec812'])
+
 
 ## Data arrangement
 # Missing data filling approach for physiology data (Currently, just filling

@@ -298,6 +298,11 @@ class AGITATION_DATASET():
       #print(f'mean {activity_count_mean.shape}')
       #print(f'std {activity_count_std.shape}')
       #print(f'result {len(result)}')
+      print("Shapes of arrays before concatenation:")
+      print("result:", np.shape(result))
+      print("activity_count_relative:", np.shape(activity_count_relative))
+      print("activity_count_mean:", np.shape(activity_count_mean))
+      print("activity_count_std:", np.shape(activity_count_std))
 
       activity_count.append(np.concatenate([result,activity_count_relative, activity_count_mean,activity_count_std]))
 

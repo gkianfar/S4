@@ -5,26 +5,97 @@ import seaborn as sns
 from matplotlib import cm
 import matplotlib.patches as mpatches
 from collections.abc import Iterable
-from sklearn.preprocessing import StandardScaler
 import os
 import warnings
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.preprocessing import StandardScaler, MinMaxScaler
-
+import pickle
 warnings.filterwarnings('ignore')
+from sklearn.neural_network import MLPClassifier
+from sklearn.tree import DecisionTreeClassifier
+from sklearn.svm import SVC
+from sklearn.model_selection import RandomizedSearchCV
+import optuna
+from sklearn.model_selection import cross_val_score
+from sklearn.datasets import make_classification
+from sklearn.model_selection import train_test_split
+from sklearn.metrics import accuracy_score
+
+from sklearn.metrics import classification_report, precision_recall_curve, confusion_matrix, accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, roc_curve, auc
+import shap
+
+# Argparse
+import argparse
+
+# Initialize the argument parser
+parser = argparse.ArgumentParser(description="Process some integers.")
+
+# Add the 'if_global' argument as a boolean flag
+parser.add_argument(
+    '--global',
+    action='store_true',
+    help='Set if_global to True',
+)
+
+parser.add_argument(
+    '--retrain',
+    action='store_true',
+    help='Set if you want to remove features and retrain',
+)
+
+# Add the 'seed' argument with a default value
+parser.add_argument(
+    '--seed',
+    type=int,
+    default=2025,
+    help='Set the seed for repeatable train-test-validation split (default: 2025)',
+)
+
+parser.add_argument(
+    '--dataset_path',
+    type=str,
+    help='The path of the target dataset'
+)
+
+parser.add_argument(
+    '--model_name',
+    choices=['DecisionTree', 'SVM', 'MLP'],
+    help='Specify the model to use. Options: DecisionTree, SVM, MLP.'
+)
 
 
-# Configuration
-if_global = True
-seed = 2025 #  Set seed for repeatable train test val split
+# Parse the command-line arguments
+args = parser.parse_args()
+
+print(args)
+
+# Assign the parsed arguments to variables
+if_global = args.global
+seed = args.seed
+dataset_path = args.dataset_path
+#dataset_path = f'/content/drive/MyDrive/datasets/dataset_{filename}.csv'
 ratios = [0.9,0.1] # [train, test]
-if sum(ratios) != 1:
-    raise Exception('Sum of ratios should be 1')
 
+# Check if the provided dataset_path exists
+if not os.path.exists(args.dataset_path):
+    raise FileNotFoundError(f"The specified dataset path does not exist: {args.dataset_path}")
 
-filename = ''
-dataset_path = f'/content/drive/MyDrive/datasets/dataset_{filename}.csv'
+# Set directory
+#%cd /content/TIHM-Dataset-Visualization
+DPATH = './Data'
+SAVE_PATH = './Figs/'
+if not os.path.exists(SAVE_PATH):
+    os.makedirs(SAVE_PATH)
+
 dataset = pd.read_csv(dataset_path)
+
+# Extract the base filename without the directory path
+f = dataset_path.split('/')[-1]  # 'dataset_example.csv'
+
+# Remove the prefix 'dataset_' and the suffix '.csv'
+filename = f[len('dataset_'):-len('.csv')]
+
+print(f'filename: {filename}')
 
 # Encode nonnumeric features and correcting data types
 
@@ -60,7 +131,7 @@ dataset = dataset[dataset.columns[~dataset.columns.str.endswith(('_std', '_mean'
 
 # Dataset partitioning
 if if_global:
-  dataset = dataset.sample(frac=1, random_state=42).reset_index(drop=True)
+  dataset = dataset.sample(frac=1, random_state=seed).reset_index(drop=True)
   total_samples = dataset.shape[0]
   dataset_train = dataset.iloc[:int(total_samples*ratios[0])]
   dataset_test = dataset.iloc[int(total_samples*(ratios[0])):]
@@ -120,9 +191,6 @@ if if_global:
     dataset_train[columns_to_normalize] = scaler.fit_transform(dataset_train[columns_to_normalize])
     dataset_test[columns_to_normalize] = scaler.transform(dataset_test[columns_to_normalize])
 
-    # Store global statistics
-    global_stats['mean'] = scaler.mean_
-    global_stats['std'] = scaler.scale_
 else:
     min_max_scaler = MinMaxScaler()
     # Fit the scaler on the train data of the current patient
@@ -151,6 +219,521 @@ else:
           # Transform the test data using the patient-specific scaler
           dataset_test.loc[dataset_test['patient_id'] == p, columns_to_normalize] = \
               scaler.transform(patient_data_test[columns_to_normalize])
+
+
+# Check if Nan exists
+nan_positions = np.where(dataset_train.isna())
+for row, col in zip(nan_positions[0], nan_positions[1]):
+    print(f"Row: {row}, Column: {dataset_train.columns[col]}")
+print(f'train nan: {len(nan_positions[0])}')
+
+nan_positions = np.where(dataset_test.isna())
+for row, col in zip(nan_positions[0], nan_positions[1]):
+    print(f"Row: {row}, Column: {dataset_train.columns[col]}")
+print(f'test nan: {len(nan_positions[0])}')
+
+
+# Selecting columns except patient_id, date, start_time, end_time for learning process
+#  Define inputs and label arrays
+X_train, y_train = dataset_train.iloc[:, 3:].drop(columns=['label']), dataset_train['label'].astype(int)
+X_test, y_test = dataset_test.iloc[:, 3:].drop(columns=['label']), dataset_test['label'].astype(int)
+
+# For fair comparison with mlp that uses early stopping, we shring the number of training set for ML models
+X_train_sub, X_val, y_train_sub, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=seed)
+
+X_columns = X_train.iloc[:, 3:].columns
+n_features = X_train.shape[1]
+
+
+## Train a model and get the results on various metrics
+# Generate synthetic dataset
+
+# Define and train the MLP model
+if model_name == 'MLP':    
+
+    # Define the objective function for Optuna
+    def objective(trial):
+        # Define hyperparameter search space
+        hidden_layer_1 = trial.suggest_int('hidden_layer_1', 32, 256)
+        hidden_layer_2 = trial.suggest_int('hidden_layer_2', 16, 128)
+        alpha = trial.suggest_loguniform('alpha', 1e-5, 1e-2)
+        learning_rate_init = trial.suggest_loguniform('learning_rate_init', 1e-4, 1e-1)
+
+        # Initialize the MLP model
+        model = MLPClassifier(
+            hidden_layer_sizes=(hidden_layer_1, hidden_layer_2),
+            alpha=alpha,
+            learning_rate_init=learning_rate_init,
+            max_iter=1,  # We will control iterations manually
+            warm_start=True,  # Enable continuation of training
+            random_state=seed
+        )
+
+        # Early stopping parameters
+        max_epochs = 300
+        patience = 10
+        best_val_score = -float('inf')
+        epochs_without_improvement = 0
+
+        for epoch in range(max_epochs):
+            model.fit(X_train_sub, y_train_sub)  # Train for a single epoch
+            val_predictions = model.predict(X_val)
+            val_score = accuracy_score(y_val, val_predictions)
+
+            if val_score > best_val_score:
+                best_val_score = val_score
+                epochs_without_improvement = 0
+                # Optionally, save the best model parameters
+                best_model = model
+            else:
+                epochs_without_improvement += 1
+
+            if epochs_without_improvement >= patience:
+                break
+
+        return best_val_score  # Optuna aims to maximize this score
+
+    # Run the optimization
+    study = optuna.create_study(direction='maximize')
+    study.optimize(objective, n_trials=20)
+
+    # Print the best hyperparameters
+    print("Best hyperparameters:", study.best_params)
+    print("Best validation accuracy:", study.best_value)
+
+    # Train the best model on the full training set
+    best_params = study.best_params
+    model = MLPClassifier(
+        hidden_layer_sizes=(best_params['hidden_layer_1'], best_params['hidden_layer_2']),
+        alpha=best_params['alpha'],
+        learning_rate_init=best_params['learning_rate_init'],
+        max_iter=1,
+        random_state=seed
+    )
+    # Early stopping parameters
+    max_epochs = 300
+    patience = 10
+    best_val_score = -float('inf')
+    epochs_without_improvement = 0
+
+    for epoch in range(max_epochs):
+        model.fit(X_train_sub, y_train_sub)  # Train for a single epoch
+        val_predictions = model.predict(X_val)
+        val_score = accuracy_score(y_val, val_predictions)
+
+        if val_score > best_val_score:
+            best_val_score = val_score
+            epochs_without_improvement = 0
+            # Optionally, save the best model parameters
+            best_model = model
+        else:
+            epochs_without_improvement += 1
+
+        if epochs_without_improvement >= patience:
+            break
+
+
+elif model_name == 'SVM':
+    # Hyperparametertunning
+    # Define the objective function for Optuna
+    def objective(trial):
+        # Define hyperparameter search space
+        C = trial.suggest_loguniform('C', 1e-3, 1e3)  # Log-uniform sampling
+        gamma = trial.suggest_loguniform('gamma', 1e-4, 1e1)
+        kernel = trial.suggest_categorical('kernel', ['linear', 'rbf'])
+
+        # Create and evaluate model
+        model = SVC(C=C, gamma=gamma, kernel=kernel, probability=True, random_state=seed)
+        # Train the model
+        model.fit(X_train_sub, y_train_sub)
+
+        # Evaluate on the validation set
+        val_predictions = model.predict(X_val)
+        score = accuracy_score(y_val, val_predictions)
+        
+        return score  # Optuna tries to maximize this score
+
+    # Run the optimization
+    study = optuna.create_study(direction='maximize')  # Maximize accuracy
+    study.optimize(objective, n_trials=20)  # Try 20 different hyperparameter sets
+
+    # Print the best hyperparameters
+    print("Best hyperparameters:", study.best_params)
+    print("Best accuracy:", study.best_value)
+
+    # Get the best hyperparameters from Optuna
+    best_params = study.best_params
+    print("Best parameters:", best_params)
+
+    # Train the model using the best parameters
+    model = SVC(**best_params, probability=True, random_state=seed)
+    model.fit(X_train_sub, y_train_sub)
+
+elif model_name == 'DecisionTree':
+    # Define the objective function for Optuna
+    def objective(trial):
+        # Define hyperparameter search space
+        max_depth = trial.suggest_int('max_depth', 3, 20)  # Depth of tree
+        min_samples_split = trial.suggest_int('min_samples_split', 2, 20)  # Min samples to split
+        min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 20)  # Min samples per leaf
+        criterion = trial.suggest_categorical('criterion', ['gini', 'entropy'])  # Splitting method
+
+        # Create and evaluate model
+        model = DecisionTreeClassifier(
+            max_depth=max_depth,
+            min_samples_split=min_samples_split,
+            min_samples_leaf=min_samples_leaf,
+            criterion=criterion,
+            random_state=seed
+        )
+        
+        # Train the model
+        model.fit(X_train_sub, y_train_sub)
+
+        # Evaluate on the validation set
+        val_predictions = model.predict(X_val)
+        score = accuracy_score(y_val, val_predictions)
+        
+        return score  # Optuna tries to maximize this score
+
+    # Run the optimization
+    study = optuna.create_study(direction='maximize')  # Maximize accuracy
+    study.optimize(objective, n_trials=20)  # Try 20 different hyperparameter sets
+
+    # Print the best hyperparameters
+    print("Best hyperparameters:", study.best_params)
+    print("Best accuracy:", study.best_value)
+
+    # Get the best hyperparameters from Optuna
+    best_params = study.best_params
+
+    # Train the best model on the full training set
+    model = DecisionTreeClassifier(**best_params, random_state=seed)
+    model.fit(X_train_sub, y_train_sub)
+
+else:
+    raise ValueError("Unsupported model name")
+
+# Predict and evaluate the model
+y_pred = model.predict(X_test)
+# Calculate metrics
+accuracy = accuracy_score(y_test, y_pred)
+f1 = f1_score(y_test, y_pred)
+precision = precision_score(y_test, y_pred)
+sensitivity = recall_score(y_test, y_pred)
+
+# Calculate specificity
+tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+specificity = tn / (tn + fp)
+
+# Calculate ROC AUC
+roc_auc = roc_auc_score(y_test, y_pred)
+
+# Calculate PR AUC
+precision_curve, recall_curve, _ = precision_recall_curve(y_test, y_pred)
+pr_auc = auc(recall_curve, precision_curve)
+
+# Print the metrics
+print(f"Accuracy: {accuracy:.2f}")
+print(f"F1 Score: {f1:.2f}")
+print(f"Precision: {precision:.2f}")
+print(f"Sensitivity (Recall): {sensitivity:.2f}")
+print(f"Specificity: {specificity:.2f}")
+print(f"PR AUC: {pr_auc:.2f}")
+print(f"ROC AUC: {roc_auc:.2f}")
+
+# Shaply kernel training and computing shap values
+explainer = shap.KernelExplainer(model.predict, X_train_sub)
+shap_values = explainer.shap_values(X_test)
+# Create a single figure for visualizing feature importance
+plt.figure(figsize=(10, 6))
+
+# Plot summary of feature importance
+shap.summary_plot(shap_values, X_test, plot_type="dot", show=False)
+plt.title('Feature Importance (Stacked)')
+plt.savefig(f'/content/drive/MyDrive/datasets/shap_{filename}.png', dpi=300, bbox_inches='tight')
+
+
+# Calculate cumulative importance of features
+shap_values_mean = np.mean(np.abs(shap_values), axis=0)  # mean absolute SHAP values
+feature_importance = pd.DataFrame({'feature': range(X_train.shape[1]), 'importance': shap_values_mean})
+feature_importance = feature_importance.sort_values(by='importance', ascending=False).reset_index(drop=True)
+
+# Calculate cumulative importance
+feature_importance['cumulative_importance'] = feature_importance['importance'].cumsum() / feature_importance['importance'].sum()
+
+# Display feature importance and cumulative importance
+print(feature_importance)
+
+# Identify negative impact features
+negative_impact_features = [i for i in range(X_train.shape[1]) if (shap_values[:, i] < 0).mean() > 0.5]
+print("\nFeatures with negative impact:", X_columns[negative_impact_features])
+
+# Check correlation with target
+correlation = pd.DataFrame(X_train).corrwith(pd.Series(y_train))
+harmful_features = [feature for feature in negative_impact_features if correlation[feature] < 0]
+print("\nHarmful features:", X_columns[harmful_features])
+
+shap_results = {'dataset':filename,'accuracy':accuracy, 'f1':f1,'precision':precision,'Recall':sensitivity, 'specificity':specificity,
+                'pr_auc':pr_auc,'roc_auc':roc_auc,  'harmul_features':X_columns[harmful_features],
+                'negative_impact_features':  X_columns[negative_impact_features]}
+
+save_to_csv(shap_results,'/content/drive/MyDrive/datasets/results.csv')
+
+## Remove the harmful features and retrain
+if retrain:
+    # Selecting columns except patient_id, date, start_time, end_time for learning process
+    #  Define inputs and label arrays
+    X_train, y_train = dataset_train.iloc[:, 3:].drop(columns=['label']), dataset_train['label'].astype(int)
+    X_test, y_test = dataset_test.iloc[:, 3:].drop(columns=['label']), dataset_test['label'].astype(int)
+
+    X_train = X_train.drop(X_columns[columns= = harmful_features])
+    X_test = X_test.drop(X_columns[columns= = harmful_features])
+
+    # For fair comparison with mlp that uses early stopping, we shring the number of training set for ML models
+    X_train_sub, X_val, y_train_sub, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=seed)
+
+    X_columns = X_train.columns
+    n_features = X_train.shape[1]
+
+
+    ## Train a model and get the results on various metrics
+    # Generate synthetic dataset
+
+    # Define and train the MLP model
+    if model_name == 'MLP':    
+
+        # Define the objective function for Optuna
+        def objective(trial):
+            # Define hyperparameter search space
+            hidden_layer_1 = trial.suggest_int('hidden_layer_1', 32, 256)
+            hidden_layer_2 = trial.suggest_int('hidden_layer_2', 16, 128)
+            alpha = trial.suggest_loguniform('alpha', 1e-5, 1e-2)
+            learning_rate_init = trial.suggest_loguniform('learning_rate_init', 1e-4, 1e-1)
+
+            # Initialize the MLP model
+            model = MLPClassifier(
+                hidden_layer_sizes=(hidden_layer_1, hidden_layer_2),
+                alpha=alpha,
+                learning_rate_init=learning_rate_init,
+                max_iter=1,  # We will control iterations manually
+                warm_start=True,  # Enable continuation of training
+                random_state=seed
+            )
+
+            # Early stopping parameters
+            max_epochs = 300
+            patience = 10
+            best_val_score = -float('inf')
+            epochs_without_improvement = 0
+
+            for epoch in range(max_epochs):
+                model.fit(X_train_sub, y_train_sub)  # Train for a single epoch
+                val_predictions = model.predict(X_val)
+                val_score = accuracy_score(y_val, val_predictions)
+
+                if val_score > best_val_score:
+                    best_val_score = val_score
+                    epochs_without_improvement = 0
+                    # Optionally, save the best model parameters
+                    best_model = model
+                else:
+                    epochs_without_improvement += 1
+
+                if epochs_without_improvement >= patience:
+                    break
+
+            return best_val_score  # Optuna aims to maximize this score
+
+        # Run the optimization
+        study = optuna.create_study(direction='maximize')
+        study.optimize(objective, n_trials=20)
+
+        # Print the best hyperparameters
+        print("Best hyperparameters:", study.best_params)
+        print("Best validation accuracy:", study.best_value)
+
+        # Train the best model on the full training set
+        best_params = study.best_params
+        model = MLPClassifier(
+            hidden_layer_sizes=(best_params['hidden_layer_1'], best_params['hidden_layer_2']),
+            alpha=best_params['alpha'],
+            learning_rate_init=best_params['learning_rate_init'],
+            max_iter=1,
+            random_state=seed
+        )
+        # Early stopping parameters
+        max_epochs = 300
+        patience = 10
+        best_val_score = -float('inf')
+        epochs_without_improvement = 0
+
+        for epoch in range(max_epochs):
+            model.fit(X_train_sub, y_train_sub)  # Train for a single epoch
+            val_predictions = model.predict(X_val)
+            val_score = accuracy_score(y_val, val_predictions)
+
+            if val_score > best_val_score:
+                best_val_score = val_score
+                epochs_without_improvement = 0
+                # Optionally, save the best model parameters
+                best_model = model
+            else:
+                epochs_without_improvement += 1
+
+            if epochs_without_improvement >= patience:
+                break
+
+
+    elif model_name == 'SVM':
+        # Hyperparametertunning
+        # Define the objective function for Optuna
+        def objective(trial):
+            # Define hyperparameter search space
+            C = trial.suggest_loguniform('C', 1e-3, 1e3)  # Log-uniform sampling
+            gamma = trial.suggest_loguniform('gamma', 1e-4, 1e1)
+            kernel = trial.suggest_categorical('kernel', ['linear', 'rbf'])
+
+            # Create and evaluate model
+            model = SVC(C=C, gamma=gamma, kernel=kernel, probability=True, random_state=seed)
+            # Train the model
+            model.fit(X_train_sub, y_train_sub)
+
+            # Evaluate on the validation set
+            val_predictions = model.predict(X_val)
+            score = accuracy_score(y_val, val_predictions)
+            
+            return score  # Optuna tries to maximize this score
+
+        # Run the optimization
+        study = optuna.create_study(direction='maximize')  # Maximize accuracy
+        study.optimize(objective, n_trials=20)  # Try 20 different hyperparameter sets
+
+        # Print the best hyperparameters
+        print("Best hyperparameters:", study.best_params)
+        print("Best accuracy:", study.best_value)
+
+        # Get the best hyperparameters from Optuna
+        best_params = study.best_params
+        print("Best parameters:", best_params)
+
+        # Train the model using the best parameters
+        model = SVC(**best_params, probability=True, random_state=seed)
+        model.fit(X_train_sub, y_train_sub)
+
+    elif model_name == 'DecisionTree':
+        # Define the objective function for Optuna
+        def objective(trial):
+            # Define hyperparameter search space
+            max_depth = trial.suggest_int('max_depth', 3, 20)  # Depth of tree
+            min_samples_split = trial.suggest_int('min_samples_split', 2, 20)  # Min samples to split
+            min_samples_leaf = trial.suggest_int('min_samples_leaf', 1, 20)  # Min samples per leaf
+            criterion = trial.suggest_categorical('criterion', ['gini', 'entropy'])  # Splitting method
+
+            # Create and evaluate model
+            model = DecisionTreeClassifier(
+                max_depth=max_depth,
+                min_samples_split=min_samples_split,
+                min_samples_leaf=min_samples_leaf,
+                criterion=criterion,
+                random_state=seed
+            )
+            
+            # Train the model
+            model.fit(X_train_sub, y_train_sub)
+
+            # Evaluate on the validation set
+            val_predictions = model.predict(X_val)
+            score = accuracy_score(y_val, val_predictions)
+            
+            return score  # Optuna tries to maximize this score
+
+        # Run the optimization
+        study = optuna.create_study(direction='maximize')  # Maximize accuracy
+        study.optimize(objective, n_trials=20)  # Try 20 different hyperparameter sets
+
+        # Print the best hyperparameters
+        print("Best hyperparameters:", study.best_params)
+        print("Best accuracy:", study.best_value)
+
+        # Get the best hyperparameters from Optuna
+        best_params = study.best_params
+
+        # Train the best model on the full training set
+        model = DecisionTreeClassifier(**best_params, random_state=seed)
+        model.fit(X_train_sub, y_train_sub)
+
+    else:
+        raise ValueError("Unsupported model name")
+
+    # Predict and evaluate the model
+    y_pred = model.predict(X_test)
+    # Calculate metrics
+    accuracy = accuracy_score(y_test, y_pred)
+    f1 = f1_score(y_test, y_pred)
+    precision = precision_score(y_test, y_pred)
+    sensitivity = recall_score(y_test, y_pred)
+
+    # Calculate specificity
+    tn, fp, fn, tp = confusion_matrix(y_test, y_pred).ravel()
+    specificity = tn / (tn + fp)
+
+    # Calculate ROC AUC
+    roc_auc = roc_auc_score(y_test, y_pred)
+
+    # Calculate PR AUC
+    precision_curve, recall_curve, _ = precision_recall_curve(y_test, y_pred)
+    pr_auc = auc(recall_curve, precision_curve)
+
+    # Print the metrics
+    print(f"Accuracy: {accuracy:.2f}")
+    print(f"F1 Score: {f1:.2f}")
+    print(f"Precision: {precision:.2f}")
+    print(f"Sensitivity (Recall): {sensitivity:.2f}")
+    print(f"Specificity: {specificity:.2f}")
+    print(f"PR AUC: {pr_auc:.2f}")
+    print(f"ROC AUC: {roc_auc:.2f}")
+
+    # Shaply kernel training and computing shap values
+    explainer = shap.KernelExplainer(model.predict, X_train_sub)
+    shap_values = explainer.shap_values(X_test)
+    # Create a single figure for visualizing feature importance
+    plt.figure(figsize=(10, 6))
+
+    # Plot summary of feature importance
+    shap.summary_plot(shap_values, X_test, plot_type="dot", show=False)
+    plt.title('Feature Importance (Stacked)')
+    fname = filename+'_post'
+    plt.savefig(f'/content/drive/MyDrive/datasets/shap_{fname}.png', dpi=300, bbox_inches='tight')
+
+
+    # Calculate cumulative importance of features
+    shap_values_mean = np.mean(np.abs(shap_values), axis=0)  # mean absolute SHAP values
+    feature_importance = pd.DataFrame({'feature': range(X_train.shape[1]), 'importance': shap_values_mean})
+    feature_importance = feature_importance.sort_values(by='importance', ascending=False).reset_index(drop=True)
+
+    # Calculate cumulative importance
+    feature_importance['cumulative_importance'] = feature_importance['importance'].cumsum() / feature_importance['importance'].sum()
+
+    # Display feature importance and cumulative importance
+    print(feature_importance)
+
+    # Identify negative impact features
+    negative_impact_features = [i for i in range(X_train.shape[1]) if (shap_values[:, i] < 0).mean() > 0.5]
+    print("\nFeatures with negative impact:", X_columns[negative_impact_features])
+
+    # Check correlation with target
+    correlation = pd.DataFrame(X_train).corrwith(pd.Series(y_train))
+    harmful_features = [feature for feature in negative_impact_features if correlation[feature] < 0]
+    print("\nHarmful features:", X_columns[harmful_features])
+
+    shap_results = {'dataset':fname,'accuracy':accuracy, 'f1':f1,'precision':precision,'Recall':sensitivity, 'specificity':specificity,
+                    'pr_auc':pr_auc,'roc_auc':roc_auc,  'harmul_features':X_columns[harmful_features],
+                    'negative_impact_features':  X_columns[negative_impact_features]}
+
+    save_to_csv(shap_results,'/content/drive/MyDrive/datasets/results.csv')
+
+        
 
 
 

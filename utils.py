@@ -376,6 +376,14 @@ def count_zeros(x):
 def count_ones(x):
   return np.sum(x)
 
+def save_to_csv(results, file_path):
+    df = pd.DataFrame([results])  # Convert dictionary to DataFrame
+
+    # Check if file exists
+    if os.path.exists(file_path):
+        df.to_csv(file_path, mode='a', index=False, header=False)  # Append without header
+    else:
+        df.to_csv(file_path, mode='w', index=False, header=True)  # Create new file
 
   
 

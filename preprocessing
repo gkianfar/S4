@@ -68,7 +68,7 @@ seed = args.seed
 negative_sample_size = args.negative_sample_size
 
 filename = (
-    f"clean{args.clean_option}_"
+    f"clean{int(args.clean)}_"
     f"tm{int(args.use_transition_matrix)}_"
     f"rec{int(args.make_reciprocal)}_"
     f"th{args.threshold}_"
@@ -355,7 +355,7 @@ for index, (patient_id, start_time, end_time) in enumerate(zip(agitation_patient
       non_agitation_dataset.append([patient_id, start_time_non_agit, end_time_non_agit, non_agit_activity, observed_non_agit_activity, non_agit_params, patient_age, patient_sex, non_agit_weekday])
 
 
-# Save the datasets
+# Save the agit/non-agit datasets
 
 agit_path = f'/content/drive/MyDrive/datasets/agitation_dataset_{filename}.pkl'
 non_agit_path = f'/content/drive/MyDrive/datasets/non_agitation_dataset_{filename}.pkl'

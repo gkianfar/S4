@@ -115,6 +115,7 @@ if clean:
     transition_matrix, state_map_reverse = get_transition_matrix(activity_df,make_reciprocal)
     current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
     print(f'transition matrix end and impossible block start: {current_time}')
+    print(f'modified activities(strToint) inside function:{activity_df['location_name'].unique()}')
     impossible_activity_count = get_impossible_count(activity_df,transition_matrix,threshold,occurence_threshold)
     current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
     print(f'drop loop start start: {current_time}')
@@ -124,11 +125,12 @@ if clean:
       activity_df.reset_index(drop=True, inplace=True)
       labels_df.drop(labels_df[(labels_df['patient_id']==k) & (labels_df['date'].isin(days_with_visitor))].index, inplace=True)
       labels_df.reset_index(drop=True, inplace=True)
+    activity_df['location_name'] = activity_df['location_name'].map(state_map_reverse)
 else:
   print('No cleaning')
 
 activity_df.reset_index(drop=True, inplace=True)
-activity_df['location_name'] = activity_df['location_name'].map(state_map_reverse)
+
 
 
 # Print a sample of transition matrix

@@ -356,4 +356,30 @@ def save_concat_datasets(df_list,path):
   df_list = pd.concat(df_list)
   df_list.to_csv(path)
 
+def find_numerical_column_names(df):
+    """
+    Function to collect the names of numerical columns in a DataFrame.
+
+    Args:
+    df (pd.DataFrame): The DataFrame to analyze.
+
+    Returns:
+    list: A list of column names that are numerical.
+    """
+    # Collect column names where the dtype is numerical
+    numerical_columns = [col for col in df.columns if np.issubdtype(df[col].dtype, np.number)]
+    return numerical_columns
+
+def count_zeros(x):
+  return len(x)-np.sum(x)
+
+def count_ones(x):
+  return np.sum(x)
+
+
+  
+
+
+
+
   

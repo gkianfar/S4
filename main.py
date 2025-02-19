@@ -20,7 +20,7 @@ from sklearn.model_selection import cross_val_score
 from sklearn.datasets import make_classification
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import accuracy_score
-
+import copy
 from sklearn.metrics import classification_report, precision_recall_curve, confusion_matrix, accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, roc_curve, auc
 import shap
 from utils import *
@@ -257,14 +257,14 @@ if model_name == 'MLP':
     # Define the objective function for Optuna
     def objective(trial):
         # Define hyperparameter search space
-        hidden_layer_1 = trial.suggest_int('hidden_layer_1', 32, 256)
-        hidden_layer_2 = trial.suggest_int('hidden_layer_2', 16, 128)
+        #hidden_layer_1 = trial.suggest_int('hidden_layer_1', 32, 256)
+        #hidden_layer_2 = trial.suggest_int('hidden_layer_2', 16, 128)
         alpha = trial.suggest_loguniform('alpha', 1e-5, 1e-2)
         learning_rate_init = trial.suggest_loguniform('learning_rate_init', 1e-4, 1e-1)
 
         # Initialize the MLP model
         model = MLPClassifier(
-            hidden_layer_sizes=(hidden_layer_1, hidden_layer_2),
+            hidden_layer_sizes=(128, 64),
             alpha=alpha,
             learning_rate_init=learning_rate_init,
             max_iter=1,  # We will control iterations manually
@@ -287,7 +287,7 @@ if model_name == 'MLP':
                 best_val_score = val_score
                 epochs_without_improvement = 0
                 # Optionally, save the best model parameters
-                best_model = model
+                best_model = copy.deepcopy(model)
             else:
                 epochs_without_improvement += 1
 
@@ -307,7 +307,7 @@ if model_name == 'MLP':
     # Train the best model on the full training set
     best_params = study.best_params
     model = MLPClassifier(
-        hidden_layer_sizes=(best_params['hidden_layer_1'], best_params['hidden_layer_2']),
+        hidden_layer_sizes=(128, 64),
         alpha=best_params['alpha'],
         learning_rate_init=best_params['learning_rate_init'],
         max_iter=1,
@@ -328,12 +328,13 @@ if model_name == 'MLP':
             best_val_score = val_score
             epochs_without_improvement = 0
             # Optionally, save the best model parameters
-            best_model = model
+            best_model = copy.deepcopy(model)
         else:
             epochs_without_improvement += 1
 
         if epochs_without_improvement >= patience:
             break
+    model = copy.deepcopy(best_model)
 
 
 elif model_name == 'SVM':
@@ -513,14 +514,14 @@ if retrain:
         # Define the objective function for Optuna
         def objective(trial):
             # Define hyperparameter search space
-            hidden_layer_1 = trial.suggest_int('hidden_layer_1', 32, 256)
-            hidden_layer_2 = trial.suggest_int('hidden_layer_2', 16, 128)
+            #hidden_layer_1 = trial.suggest_int('hidden_layer_1', 32, 256)
+            #hidden_layer_2 = trial.suggest_int('hidden_layer_2', 16, 128)
             alpha = trial.suggest_loguniform('alpha', 1e-5, 1e-2)
             learning_rate_init = trial.suggest_loguniform('learning_rate_init', 1e-4, 1e-1)
 
             # Initialize the MLP model
             model = MLPClassifier(
-                hidden_layer_sizes=(hidden_layer_1, hidden_layer_2),
+                hidden_layer_sizes=(128, 64),
                 alpha=alpha,
                 learning_rate_init=learning_rate_init,
                 max_iter=1,  # We will control iterations manually
@@ -543,7 +544,7 @@ if retrain:
                     best_val_score = val_score
                     epochs_without_improvement = 0
                     # Optionally, save the best model parameters
-                    best_model = model
+                    best_model = copy.deepcopy(model)
                 else:
                     epochs_without_improvement += 1
 
@@ -563,7 +564,7 @@ if retrain:
         # Train the best model on the full training set
         best_params = study.best_params
         model = MLPClassifier(
-            hidden_layer_sizes=(best_params['hidden_layer_1'], best_params['hidden_layer_2']),
+            hidden_layer_sizes=(128, 64),
             alpha=best_params['alpha'],
             learning_rate_init=best_params['learning_rate_init'],
             max_iter=1,
@@ -584,12 +585,14 @@ if retrain:
                 best_val_score = val_score
                 epochs_without_improvement = 0
                 # Optionally, save the best model parameters
-                best_model = model
+                best_model = copy.deepcopy(model)
             else:
                 epochs_without_improvement += 1
 
             if epochs_without_improvement >= patience:
                 break
+        model = copy.deepcopy(best_model)
+        
 
 
     elif model_name == 'SVM':

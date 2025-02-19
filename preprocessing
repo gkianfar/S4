@@ -32,12 +32,18 @@ def get_args():
                         help="Cleaning option: 'remove_day' or 'remove_all'.")
 
     # Boolean flags for transition matrix usage
-    parser.add_argument("--use_transition_matrix", type=bool, default=False, 
-                    help="Enable or disable the use of transition matrix (default: True).")
+   import argparse
 
-    parser.add_argument("--make_reciprocal", type=bool, default=False, 
-                    help="Set to True to make the transition matrix reciprocal (default: True).")
+def get_args():
+    parser = argparse.ArgumentParser(description="Configuration for transition matrix processing.")
 
+    # Boolean flag for using transition matrix (default is False, set to True when flag is provided)
+    parser.add_argument("--use_transition_matrix", action='store_true',
+                        help="Enable the use of transition matrix (default: False).")
+
+    # Boolean flag for making the transition matrix reciprocal (default is False, set to True when flag is provided)
+    parser.add_argument("--make_reciprocal", action='store_true',
+                        help="Set to True to make the transition matrix reciprocal (default: False).")
 
     # Thresholds
     parser.add_argument("--threshold", type=float, default=0.03,

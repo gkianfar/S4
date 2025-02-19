@@ -27,7 +27,7 @@ def get_args():
     parser = argparse.ArgumentParser(description="Configuration for transition matrix processing.")
 
     # Cleaning option
-    parser.add_argument("--clean_option", type=str, default=["remove_day", "remove_all"], default="remove_day",
+    parser.add_argument("--clean_option", type=str, default="remove_day",
                         help="Cleaning option: 'remove_day' or 'remove_all'.")
 
     # Boolean flag for using transition matrix (default is False, set to True when flag is provided)

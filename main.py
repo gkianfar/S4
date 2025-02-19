@@ -311,8 +311,10 @@ if model_name == 'MLP':
         alpha=best_params['alpha'],
         learning_rate_init=best_params['learning_rate_init'],
         max_iter=1,
-        random_state=seed
+        random_state=seed,
+        warm_start=True  # ✅ Allows model to continue training across epochs
     )
+
     # Early stopping parameters
     max_epochs = 300
     patience = 10
@@ -568,7 +570,8 @@ if retrain:
             alpha=best_params['alpha'],
             learning_rate_init=best_params['learning_rate_init'],
             max_iter=1,
-            random_state=seed
+            random_state=seed,
+            warm_start=True  # ✅ Allows model to continue training across epochs
         )
         # Early stopping parameters
         max_epochs = 300

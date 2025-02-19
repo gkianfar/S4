@@ -480,7 +480,8 @@ if if_global:
     norm_type = 'global'
 else:
     norm_type = 'personalized'
-shap_results = {'dataset':filename,'model':model_name,'normalization':norm_type,accuracy':accuracy, 'f1':f1,'precision':precision,'Recall':sensitivity, 'specificity':specificity,
+
+shap_results = {'dataset':filename,'model':model_name,'normalization':norm_type,'accuracy':accuracy, 'f1':f1,'precision':precision,'recall':sensitivity, 'specificity':specificity,
                 'pr_auc':pr_auc,'roc_auc':roc_auc,  'harmul_features':X_columns[harmful_features],
                 'negative_impact_features':  X_columns[negative_impact_features]}
 
@@ -734,7 +735,7 @@ if retrain:
     harmful_features = [feature for feature in negative_impact_features if correlation[feature] < 0]
     print("\nHarmful features:", X_columns[harmful_features])
 
-    shap_results = {'dataset':fname,'model':model_name,'normalization':norm_type,'accuracy':accuracy, 'f1':f1,'precision':precision,'Recall':sensitivity, 'specificity':specificity,
+    shap_results = {'dataset':fname,'model':model_name,'normalization':norm_type,'accuracy':accuracy, 'f1':f1,'precision':precision,'recall':sensitivity, 'specificity':specificity,
                     'pr_auc':pr_auc,'roc_auc':roc_auc,  'harmul_features':X_columns[harmful_features],
                     'negative_impact_features':  X_columns[negative_impact_features]}
 

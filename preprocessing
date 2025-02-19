@@ -58,6 +58,16 @@ def get_args():
 args = get_args()
 print(args)
 
+# Assign to variables
+clean_option = args.clean_option
+use_transition_matrix = args.use_transition_matrix
+make_reciprocal = args.make_reciprocal
+threshold = args.threshold
+occurence_threshold = args.occurence_threshold
+seed = args.seed
+negative_sample_size = args.negative_sample_size
+
+
 # Set directory
 #%cd /content/TIHM-Dataset-Visualization
 DPATH = './Data'

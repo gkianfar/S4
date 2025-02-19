@@ -448,13 +448,13 @@ print(f"ROC AUC: {roc_auc:.2f}")
 # Shaply kernel training and computing shap values
 explainer = shap.KernelExplainer(model.predict, X_train_sub)
 shap_values = explainer.shap_values(X_test)
-# Create a single figure for visualizing feature importance
-plt.figure(figsize=(10, 6))
 
+# Create a single figure for visualizing feature importance
+#plt.figure(figsize=(10, 6))
 # Plot summary of feature importance
-shap.summary_plot(shap_values, X_test, plot_type="dot", show=False)
-plt.title('Feature Importance (Stacked)')
-plt.savefig(f'/content/drive/MyDrive/datasets/shap_{filename}.png', dpi=300, bbox_inches='tight')
+#shap.summary_plot(shap_values, X_test, plot_type="dot", show=False)
+#plt.title('Feature Importance (Stacked)')
+#plt.savefig(f'/content/drive/MyDrive/datasets/shap_{filename}.png', dpi=300, bbox_inches='tight')
 
 
 # Calculate cumulative importance of features
@@ -476,8 +476,11 @@ print("\nFeatures with negative impact:", X_columns[negative_impact_features])
 correlation = pd.DataFrame(X_train).corrwith(pd.Series(y_train))
 harmful_features = [feature for feature in negative_impact_features if correlation[feature] < 0]
 print("\nHarmful features:", X_columns[harmful_features])
-
-shap_results = {'dataset':filename,'accuracy':accuracy, 'f1':f1,'precision':precision,'Recall':sensitivity, 'specificity':specificity,
+if if_global:
+    norm_type = 'global'
+else:
+    norm_type = 'personalized'
+shap_results = {'dataset':filename,'model':model_name,'normalization':norm_type,accuracy':accuracy, 'f1':f1,'precision':precision,'Recall':sensitivity, 'specificity':specificity,
                 'pr_auc':pr_auc,'roc_auc':roc_auc,  'harmul_features':X_columns[harmful_features],
                 'negative_impact_features':  X_columns[negative_impact_features]}
 
@@ -700,14 +703,15 @@ if retrain:
     # Shaply kernel training and computing shap values
     explainer = shap.KernelExplainer(model.predict, X_train_sub)
     shap_values = explainer.shap_values(X_test)
+        fname = filename+'_post'
+
     # Create a single figure for visualizing feature importance
-    plt.figure(figsize=(10, 6))
+    #plt.figure(figsize=(10, 6))
 
     # Plot summary of feature importance
-    shap.summary_plot(shap_values, X_test, plot_type="dot", show=False)
-    plt.title('Feature Importance (Stacked)')
-    fname = filename+'_post'
-    plt.savefig(f'/content/drive/MyDrive/datasets/shap_{fname}.png', dpi=300, bbox_inches='tight')
+    #shap.summary_plot(shap_values, X_test, plot_type="dot", show=False)
+    #plt.title('Feature Importance (Stacked)')
+    #plt.savefig(f'/content/drive/MyDrive/datasets/shap_{fname}.png', dpi=300, bbox_inches='tight')
 
 
     # Calculate cumulative importance of features
@@ -730,7 +734,7 @@ if retrain:
     harmful_features = [feature for feature in negative_impact_features if correlation[feature] < 0]
     print("\nHarmful features:", X_columns[harmful_features])
 
-    shap_results = {'dataset':fname,'accuracy':accuracy, 'f1':f1,'precision':precision,'Recall':sensitivity, 'specificity':specificity,
+    shap_results = {'dataset':fname,'model':model_name,'normalization':norm_type,'accuracy':accuracy, 'f1':f1,'precision':precision,'Recall':sensitivity, 'specificity':specificity,
                     'pr_auc':pr_auc,'roc_auc':roc_auc,  'harmul_features':X_columns[harmful_features],
                     'negative_impact_features':  X_columns[negative_impact_features]}
 

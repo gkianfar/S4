@@ -114,7 +114,8 @@ activity_df['location_name'] = activity_df['location_name'].map(state_map_revers
 
 # Print a sample of transition matrix
 print('Patient ec812 TM:')
-print(f'row-wise sum: {np.sum(transition_matrix['ec812'],axis=1)}')
+s = np.sum(transition_matrix['ec812'],axis=1)
+print(f'row-wise sum: {s}')
 print(transition_matrix['ec812'])
 
 ## Data arrangement

@@ -21,7 +21,7 @@ sns.set_palette(ibm_colorblind)
 
 import argparse
 
-### Run with python preprocessing.py --clean --use_transition_matrix --make_reciprocal --threshold 0.05 --occurence_threshold 0 --seed 2025 --negative_sample_size 3
+### Run with python preprocessing.py --clean --use_transition_matrix --threshold 0.05 --occurence_threshold 0 --seed 2025 --negative_sample_size 3
 
 
 def get_args():
@@ -35,10 +35,7 @@ def get_args():
     parser.add_argument("--use_transition_matrix", action='store_true',
                         help="Enable the use of transition matrix (default: False).")
 
-    # Boolean flag for making the transition matrix reciprocal (default is False, set to True when flag is provided)
-    parser.add_argument("--make_reciprocal", action='store_true',
-                        help="Set to True to make the transition matrix reciprocal (default: False).")
-
+   
     # Thresholds
     parser.add_argument("--threshold", type=float, default=0.03,
                         help="Values lower than this will be considered as impossible transitions.")
@@ -62,7 +59,6 @@ print(args)
 # Assign to variables
 clean = args.clean
 use_transition_matrix = args.use_transition_matrix
-make_reciprocal = args.make_reciprocal
 threshold = args.threshold
 occurence_threshold = args.occurence_threshold
 seed = args.seed
@@ -71,7 +67,6 @@ negative_sample_size = args.negative_sample_size
 filename = (
     f"clean{int(args.clean)}_"
     f"tm{int(args.use_transition_matrix)}_"
-    f"rec{int(args.make_reciprocal)}_"
     f"th{args.threshold}_"
     f"occ{args.occurence_threshold}_"
     f"seed{args.seed}_"
@@ -113,7 +108,7 @@ if clean:
   if use_transition_matrix:
     current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
     print(f'transition matrix start: {current_time}')
-    transition_matrix, state_map_reverse = get_transition_matrix(activity_df,make_reciprocal)
+    transition_matrix, state_map_reverse = get_transition_matrix(activity_df)
     current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
     print(f'transition matrix end and impossible block start: {current_time}')
     u_act = activity_df['location_name'].unique()

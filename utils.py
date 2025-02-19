@@ -106,7 +106,7 @@ def load_datasets(DPATH):
 
 
 
-def get_transition_matrix(activity_df, make_reciprocal=False):
+def get_transition_matrix(activity_df):
     patients = activity_df['patient_id'].unique()
     states = activity_df['location_name'].unique().tolist()
     n_state = len(states)
@@ -150,16 +150,9 @@ def get_transition_matrix(activity_df, make_reciprocal=False):
                     flag = True
 
     for p in patients:
-        for i in range(n_state):
-            row_sum = np.sum(transition_matrix[p][i, :])
-            if row_sum != 0:
-                transition_matrix[p][i, :] /= row_sum
-    # Make the matrices reciprocal
-    if make_reciprocal:
-      for p in patients:
-          transition_matrix[p] = np.minimum(transition_matrix[p], transition_matrix[p].T)
-          transition_matrix[p] = transition_matrix[p] / np.sum(transition_matrix[p], axis=1, keepdims=True)
-
+      sum_all_transitions = np.sum(transition_matrix[p])
+      transition_matrix[p] = (transition_matrix[p]+transition_matrix[p].T)/sum_all_transitions
+    
     return transition_matrix, state_map_reverse
 
 def get_impossible_count(activity_df,transition_matrix,threshold,occurence_threshold):

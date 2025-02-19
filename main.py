@@ -704,7 +704,7 @@ if retrain:
     # Shaply kernel training and computing shap values
     explainer = shap.KernelExplainer(model.predict, X_train_sub)
     shap_values = explainer.shap_values(X_test)
-        fname = filename+'_post'
+    fname = filename+'_post'
 
     # Create a single figure for visualizing feature importance
     #plt.figure(figsize=(10, 6))

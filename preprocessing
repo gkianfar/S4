@@ -20,14 +20,14 @@ sns.set_palette(ibm_colorblind)
 
 import argparse
 
-### Run with python preprocessing.py --clean_option "remove_day" --use_transition_matrix --make_reciprocal --threshold 0.05 --occurence_threshold 1 --seed 2025 --negative_sample_size 3
+### Run with python preprocessing.py --clean --use_transition_matrix --make_reciprocal --threshold 0.05 --occurence_threshold 0 --seed 2025 --negative_sample_size 3
 
 
 def get_args():
     parser = argparse.ArgumentParser(description="Configuration for transition matrix processing.")
 
     # Cleaning option
-    parser.add_argument("--clean_option", type=str, default="remove_day",
+    parser.add_argument("--clean", action='store_true',
                         help="Cleaning option: 'remove_day' or 'remove_all'.")
 
     # Boolean flag for using transition matrix (default is False, set to True when flag is provided)
@@ -59,7 +59,7 @@ args = get_args()
 print(args)
 
 # Assign to variables
-clean_option = args.clean_option
+clean = args.clean
 use_transition_matrix = args.use_transition_matrix
 make_reciprocal = args.make_reciprocal
 threshold = args.threshold
@@ -67,6 +67,15 @@ occurence_threshold = args.occurence_threshold
 seed = args.seed
 negative_sample_size = args.negative_sample_size
 
+filename = (
+    f"clean{args.clean_option}_"
+    f"tm{int(args.use_transition_matrix)}_"
+    f"rec{int(args.make_reciprocal)}_"
+    f"th{args.threshold}_"
+    f"occ{args.occurence_threshold}_"
+    f"seed{args.seed}_"
+    f"neg{args.negative_sample_size}.txt"
+)
 
 # Set directory
 #%cd /content/TIHM-Dataset-Visualization
@@ -88,7 +97,7 @@ activity_df = activity_df.drop_duplicates()
 physiology_df = physiology_df.drop_duplicates()
 sleep_df = sleep_df.drop_duplicates()
 
-if clean_option == 'remove_day':
+if clean:
   duplicate_days = activity_df[['date','patient_id']][~activity_df.duplicated(subset=['patient_id', 'timestamp'], keep='first')]
   patients = duplicate_days['patient_id'].unique()
   dates = duplicate_days['date']
@@ -347,15 +356,46 @@ for index, (patient_id, start_time, end_time) in enumerate(zip(agitation_patient
 
 
 # Save the datasets
-if use_transition_matrix:
-    if make_reciprocal:
-       agit_path = f'/content/drive/MyDrive/datasets/agitation_dataset_tm{threshold}_rec_clean.pkl'
-       non_agit_path = f'/content/drive/MyDrive/datasets/non_agitation_dataset_tm{threshold}_rec_clean.pkl'
-    else: 
-       agit_path = f'/content/drive/MyDrive/datasets/agitation_dataset_tm{threshold}_clean.pkl'
-       non_agit_path = f'/content/drive/MyDrive/datasets/non_agitation_dataset_tm{threshold}_clean.pkl'
-else:
-    pickle.dump(agitation_dataset,open(f'/content/drive/MyDrive/datasets/agitation_dataset_simple_clean.pkl','wb'))
-    pickle.dump(non_agitation_dataset,open(f'/content/drive/MyDrive/datasets/non_agitation_dataset_simple_clean.pkl','wb'))
+
+agit_path = f'/content/drive/MyDrive/datasets/agitation_dataset_{filename}.pkl'
+non_agit_path = f'/content/drive/MyDrive/datasets/non_agitation_dataset_{filename}.pkl'
+
+pickle.dump(agitation_dataset,open(agit_path,'wb'))
+pickle.dump(non_agitation_dataset,open(non_agit_path,'wb'))
 
 
+# Process the collectec data and create a DataFrame in the output
+agitation_df = AGITATION_DATASET(agitation_dataset,
+                                 activity_df['location_name'].unique(),
+                                 physiology_df['device_type'].unique())
+
+
+non_agitation_df = AGITATION_DATASET(non_agitation_dataset,
+                                 activity_df['location_name'].unique(),
+                                 physiology_df['device_type'].unique())
+
+agitation_df.feature_extraction()
+agitation_df.set_label(1)
+non_agitation_df.feature_extraction()
+non_agitation_df.set_label(0)
+
+
+#Visualize datasets
+agitation_df.feature_df.head()
+agitation_df.feature_df.describe()
+
+non_agitation_df.feature_df.head()
+non_agitation_df.feature_df.describe()
+
+ 
+# check existance of nan values and save the combined dataset
+dataset = pd.concat([agitation_df.feature_df.reset_index(drop=True),non_agitation_df.feature_df.reset_index(drop=True)]).reset_index(drop=True)
+nan_positions = np.where(dataset.isna())
+counter = 0
+for row, col in zip(nan_positions[0], nan_positions[1]):
+    counter+=1
+    print(f"{counter}-Row: {row}, Column: {dataset.columns[col]}")
+print(f'NaN: {len(nan_positions[0])}')
+
+# Save the combined dataset
+dataset.to_csv(f'/content/drive/MyDrive/datasets/dataset_{filename}.csv', index=False)

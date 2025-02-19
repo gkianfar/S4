@@ -11,7 +11,6 @@ import os
 import warnings
 warnings.filterwarnings('ignore')
 
-%matplotlib inline
 ## Set colour palette
 ibm_colorblind = ['#648FFF', '#FE6100', '#DC267F', '#785EF0', '#FFB000','#48A9A6']
 sns.set_palette(ibm_colorblind)

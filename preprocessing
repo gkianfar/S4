@@ -14,7 +14,6 @@ from datetime import datetime
 
 warnings.filterwarnings('ignore')
 
-%matplotlib inline
 ## Set colour palette
 ibm_colorblind = ['#648FFF', '#FE6100', '#DC267F', '#785EF0', '#FFB000','#48A9A6']
 sns.set_palette(ibm_colorblind)
@@ -30,12 +29,6 @@ def get_args():
     # Cleaning option
     parser.add_argument("--clean_option", type=str, default=["remove_day", "remove_all"], default="remove_day",
                         help="Cleaning option: 'remove_day' or 'remove_all'.")
-
-    # Boolean flags for transition matrix usage
-   import argparse
-
-def get_args():
-    parser = argparse.ArgumentParser(description="Configuration for transition matrix processing.")
 
     # Boolean flag for using transition matrix (default is False, set to True when flag is provided)
     parser.add_argument("--use_transition_matrix", action='store_true',
@@ -77,7 +70,7 @@ activity_df, physiology_df, sleep_df, sleep_df, demographics_df = load_datasets(
 sleep_patients = np.unique(sleep_df['patient_id'])
 activity_patients = np.unique(activity_df['patient_id'])
 physiology_patients = np.unique(physiology_df['patient_id'])
-physiology_parameters = np.unique(df['device_type'])
+physiology_parameters = np.unique(physiology_df['device_type'])
 
 
 # Clean data
@@ -351,7 +344,7 @@ if use_transition_matrix:
        agit_path = f'/content/drive/MyDrive/datasets/agitation_dataset_tm{threshold}_clean.pkl'
        non_agit_path = f'/content/drive/MyDrive/datasets/non_agitation_dataset_tm{threshold}_clean.pkl'
 else:
-    pickle.dump(agitation_dataset,open(f'/content/drive/MyDrive/datasets/agitation_dataset_simple}_clean.pkl','wb'))
+    pickle.dump(agitation_dataset,open(f'/content/drive/MyDrive/datasets/agitation_dataset_simple_clean.pkl','wb'))
     pickle.dump(non_agitation_dataset,open(f'/content/drive/MyDrive/datasets/non_agitation_dataset_simple_clean.pkl','wb'))
 
 

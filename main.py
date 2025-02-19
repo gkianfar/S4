@@ -244,7 +244,7 @@ X_test, y_test = dataset_test.iloc[:, 3:].drop(columns=['label']), dataset_test[
 # For fair comparison with mlp that uses early stopping, we shring the number of training set for ML models
 X_train_sub, X_val, y_train_sub, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=seed)
 
-X_columns = X_train.iloc[:, 3:].columns
+X_columns = X_train.columns
 n_features = X_train.shape[1]
 
 

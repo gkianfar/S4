@@ -102,7 +102,7 @@ def load_datasets(DPATH):
     for col in demographics_df.columns:
         demographics_df[col] = correct_col_type(demographics_df,col)
 
-    return activity_df, physiology_df, sleep_df, sleep_df, demographics_df
+    return activity_df, physiology_df, sleep_df, labels_df, demographics_df
 
 
 

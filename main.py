@@ -23,16 +23,18 @@ from sklearn.metrics import accuracy_score
 
 from sklearn.metrics import classification_report, precision_recall_curve, confusion_matrix, accuracy_score, f1_score, precision_score, recall_score, roc_auc_score, roc_curve, auc
 import shap
-
+from utils import *
 # Argparse
 import argparse
 
+
+# Run python main --if_global --dataset_path "/content/drive/MyDrive/datasets/dataset_clean0_tm0_rec0_th0.03_occ0_seed2025_neg1.csv" --seed 2025 --model_name "SVM" --retrain
 # Initialize the argument parser
 parser = argparse.ArgumentParser(description="Process some integers.")
 
 # Add the 'if_global' argument as a boolean flag
 parser.add_argument(
-    '--global',
+    '--if_global',
     action='store_true',
     help='Set if_global to True',
 )
@@ -70,8 +72,10 @@ args = parser.parse_args()
 print(args)
 
 # Assign the parsed arguments to variables
-if_global = args.global
+if_global = args.if_global
 seed = args.seed
+model_name = args.model_name
+retrain = args.retrain
 dataset_path = args.dataset_path
 #dataset_path = f'/content/drive/MyDrive/datasets/dataset_{filename}.csv'
 ratios = [0.9,0.1] # [train, test]
@@ -100,8 +104,7 @@ print(f'filename: {filename}')
 # Encode nonnumeric features and correcting data types
 
 # Modify dtype
-dataset_train['normal_samples'] = dataset_train['normal_samples'].astype(float)
-dataset_test['normal_samples'] = dataset_test['normal_samples'].astype(float)
+dataset['normal_samples'] = dataset['normal_samples'].astype(float)
 
 #Weekdays
 ohe_col = 'week_day'
@@ -217,8 +220,8 @@ else:
             scaler.fit_transform(patient_data_train[columns_to_normalize])
         if p in dataset_test['patient_id'].unique():
           # Transform the test data using the patient-specific scaler
-          dataset_test.loc[dataset_test['patient_id'] == p, columns_to_normalize] = \
-              scaler.transform(patient_data_test[columns_to_normalize])
+          transformed_data = scaler.transform(patient_data_test[columns_to_normalize])
+          dataset_test.loc[dataset_test['patient_id'] == p, columns_to_normalize] = transformed_data
 
 
 # Check if Nan exists
@@ -487,8 +490,8 @@ if retrain:
     X_train, y_train = dataset_train.iloc[:, 3:].drop(columns=['label']), dataset_train['label'].astype(int)
     X_test, y_test = dataset_test.iloc[:, 3:].drop(columns=['label']), dataset_test['label'].astype(int)
 
-    X_train = X_train.drop(X_columns[columns= = harmful_features])
-    X_test = X_test.drop(X_columns[columns= = harmful_features])
+    X_train = X_train.drop(columns= X_columns[harmful_features])
+    X_test = X_test.drop(columns= X_columns[harmful_features])
 
     # For fair comparison with mlp that uses early stopping, we shring the number of training set for ML models
     X_train_sub, X_val, y_train_sub, y_val = train_test_split(X_train, y_train, test_size=0.1, random_state=seed)

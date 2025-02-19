@@ -75,7 +75,7 @@ filename = (
     f"th{args.threshold}_"
     f"occ{args.occurence_threshold}_"
     f"seed{args.seed}_"
-    f"neg{args.negative_sample_size}.txt"
+    f"neg{args.negative_sample_size}"
 )
 
 # Set directory

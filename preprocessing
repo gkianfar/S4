@@ -82,10 +82,6 @@ if not os.path.exists(SAVE_PATH):
 
 # Load raw datasets
 activity_df, physiology_df, sleep_df, labels_df, demographics_df = load_datasets(DPATH)
-sleep_patients = np.unique(sleep_df['patient_id'])
-activity_patients = np.unique(activity_df['patient_id'])
-physiology_patients = np.unique(physiology_df['patient_id'])
-physiology_parameters = np.unique(physiology_df['device_type'])
 
 
 # Clean data
@@ -132,9 +128,10 @@ else:
   print('No cleaning')
 
 activity_df.reset_index(drop=True, inplace=True)
-
-
-
+sleep_patients = np.unique(sleep_df['patient_id'])
+activity_patients = np.unique(activity_df['patient_id'])
+physiology_patients = np.unique(physiology_df['patient_id'])
+physiology_parameters = np.unique(physiology_df['device_type'])
 
 
 ## Data arrangement

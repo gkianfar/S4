@@ -106,6 +106,42 @@ def load_datasets(DPATH):
 
 
 
+def get_impossible_count(activity_df,transition_matrix,threshold,occurence_threshold):
+  patients = activity_df['patient_id'].unique()
+
+  impossible_activity_count = {}
+
+  for p in patients:
+
+      impossible_activity_count[p] = []
+
+      patient_matrix = transition_matrix[p]  # Extract patient's transition matrix
+      indices = np.where((patient_matrix < threshold))  # Find indices
+
+      patient_impossible_transitions = list(zip(*indices))
+      days = activity_df['date'][activity_df['patient_id'] == p].unique()
+      days = np.sort(days)
+
+      for i, d in enumerate(days):
+          counter = 0
+          df = activity_df[(activity_df['patient_id'] == p) & (activity_df['date'] == d)]
+          sequence = df['location_name'].tolist()
+          timestamp = df['timestamp'].tolist()
+          if not sequence:
+              continue
+
+          for s, t in zip(sequence[1:], timestamp[1:]):
+
+              init_state = s
+              init_time = t
+              if (init_state,s) in patient_impossible_transitions:
+                counter+=1
+          if counter>occurence_threshold:
+            impossible_activity_count[p].append((d,counter))
+      if not impossible_activity_count[p]:
+        del impossible_activity_count[p]
+  return impossible_activity_count
+
 def get_transition_matrix(activity_df):
     patients = activity_df['patient_id'].unique()
     states = activity_df['location_name'].unique().tolist()
@@ -150,46 +186,13 @@ def get_transition_matrix(activity_df):
                     flag = True
 
     for p in patients:
+      #transition_matrix[p] = np.minimum(transition_matrix[p],transition_matrix[p].T)
+      transition_matrix[p] = (transition_matrix[p] + transition_matrix[p].T) // 2
       sum_all_transitions = np.sum(transition_matrix[p])
-      transition_matrix[p] = (transition_matrix[p]+transition_matrix[p].T)/sum_all_transitions
+      transition_matrix[p] = transition_matrix[p]/sum_all_transitions
     
     return transition_matrix, state_map_reverse
 
-def get_impossible_count(activity_df,transition_matrix,threshold,occurence_threshold):
-  patients = activity_df['patient_id'].unique()
-
-  impossible_activity_count = {}
-
-  for p in patients:
-
-      impossible_activity_count[p] = []
-
-      patient_matrix = transition_matrix[p]  # Extract patient's transition matrix
-      indices = np.where((patient_matrix < threshold))  # Find indices
-
-      patient_impossible_transitions = list(zip(*indices))
-      days = activity_df['date'][activity_df['patient_id'] == p].unique()
-      days = np.sort(days)
-
-      for i, d in enumerate(days):
-          counter = 0
-          df = activity_df[(activity_df['patient_id'] == p) & (activity_df['date'] == d)]
-          sequence = df['location_name'].tolist()
-          timestamp = df['timestamp'].tolist()
-          if not sequence:
-              continue
-
-          for s, t in zip(sequence[1:], timestamp[1:]):
-
-              init_state = s
-              init_time = t
-              if (init_state,s) in patient_impossible_transitions:
-                counter+=1
-          if counter>occurence_threshold:
-            impossible_activity_count[p].append((d,counter))
-      if not impossible_activity_count[p]:
-        del impossible_activity_count[p]
-  return impossible_activity_count
 
 class AGITATION_DATASET():
   def __init__(self,dataset, location_names, physiology_names):
@@ -220,38 +223,54 @@ class AGITATION_DATASET():
     self.location_columns.extend(mean_cols)
     self.location_columns.extend(std_cols)
     self.physiology_names = physiology_names
+
   def __len__(self):
     return len(self.patient_id)
   def init_df(self):
     self.feature_df = pd.DataFrame(np.column_stack((self.patient_id,
                       self.start_time, self.end_time, self.week_day, self.age, self.gender)),
                        columns=['patient_id', 'start_time', 'end_time', 'week_day','age', 'gender'])
+    
+    print(f'df shape {self.feature_df.shape}')
   def activity_change(self, inplace = True):
+
+    print('Activity change function')
     activity_change = []
+    print(f'p len:{self.__len__()}')
     for index in range(self.__len__()):
       dummy = self.activity[index]
       dummy = np.array(dummy)
-      result = np.concatenate([[np.NaN], dummy[1:] != dummy[:-1]])
-      changed = np.nansum(result)
+      if len(dummy)>0:  
+        result = np.concatenate([[np.NaN], dummy[1:] != dummy[:-1]])
+        changed = np.nansum(result)
+      else:
+        changed = 0
 
       normal_activity_changes = []
       count_sample = 0
       normal_activity_samples = len(self.non_agitation[index])
-
+      
+      print(f"non_agit: {len(self.non_agitation[index])}")
       for arr in self.non_agitation[index]:
         arr = np.array(arr)
-        if len(arr)==0:
-          continue
-        result = arr[1:] != arr[:-1]
-        count_sample+=1
-        normal_activity_changes.append(np.nansum(result))
+        if len(arr)>0:          
+          result = arr[1:] != arr[:-1]
+          count_sample+=1
+          normal_activity_changes.append(np.nansum(result))
+        else:
+          normal_activity_changes.append(0)
 
       # Calculate sample mean and standard deviation
       normal_activity_change_mean = np.mean(normal_activity_changes)
       normal_activity_change_std = np.std(normal_activity_changes)
       relative_change = (changed - normal_activity_change_mean)/normal_activity_change_std
-      if not relative_change:
+      if relative_change is None:
+        print("relative_change is None")
         relative_change = 0
+      elif np.isnan(relative_change):
+        print("relative_change is np.nan")
+        relative_change = 0
+        
       activity_change.append([changed, relative_change, normal_activity_change_mean, normal_activity_change_std,normal_activity_samples])
       activity_change_df = pd.DataFrame(activity_change, columns=['change_count', 'change_relative', 'normal_change_mean','normal_change_std','normal_samples'])
     if inplace:
@@ -259,6 +278,8 @@ class AGITATION_DATASET():
     else:
       return activity_change_df
   def activity_count(self, inplace = True):
+    print('Activity count function')
+
     activity_count = []
     for index in range(self.__len__()):
       dummy = self.activity[index]
@@ -274,10 +295,11 @@ class AGITATION_DATASET():
 
 
       normal_activity_counts = []
+      print(f"non_agit: {len(self.non_agitation[index])}")
+      if len(self.non_agitation[index])==1:
+        print(self.non_agitation[index])
       for arr in self.non_agitation[index]:
-        arr = np.array(arr)
-        if len(arr)==0:
-          continue
+        arr = np.array(arr)         
         count_df = pd.Series(arr).value_counts()
         result = []
         for location in self.location_names:
@@ -291,18 +313,18 @@ class AGITATION_DATASET():
       activity_count_mean = np.mean(normal_activity_counts, axis=0)
       activity_count_std = np.std(normal_activity_counts, axis=0)
       activity_count_relative = (np.array(result) - activity_count_mean)/activity_count_std
-      activity_count_relative = np.nan_to_num(activity_count_relative, nan=0)
-      #print(f'act rel:{activity_count_relative}')
+      # Filling NaN values with 0, although it is in correct but we should feel with something
+      activity_count_relative = [0 if np.isnan(x) else x for x in activity_count_relative]
 
       #print(f'rel {activity_count_relative.shape}')
       #print(f'mean {activity_count_mean.shape}')
       #print(f'std {activity_count_std.shape}')
       #print(f'result {len(result)}')
-      print("Shapes of arrays before concatenation:")
-      print("result:", np.shape(result))
-      print("activity_count_relative:", np.shape(activity_count_relative))
-      print("activity_count_mean:", np.shape(activity_count_mean))
-      print("activity_count_std:", np.shape(activity_count_std))
+      #print("Shapes of arrays before concatenation:")
+      #print("result:", np.shape(result))
+      #print("activity_count_relative:", np.shape(activity_count_relative))
+      #print("activity_count_mean:", np.shape(activity_count_mean))
+      #print("activity_count_std:", np.shape(activity_count_std))
 
       activity_count.append(np.concatenate([result,activity_count_relative, activity_count_mean,activity_count_std]))
 
@@ -316,7 +338,7 @@ class AGITATION_DATASET():
       return activity_count_df
 
   def feature_extraction(self, inplace = True):
-    self.init_df()
+    #self.init_df()
     self.activity_change(inplace)
     self.activity_count(inplace)
     self.physiology_features(inplace)
@@ -382,10 +404,5 @@ def save_to_csv(results, file_path):
         df.to_csv(file_path, mode='a', index=False, header=False)  # Append without header
     else:
         df.to_csv(file_path, mode='w', index=False, header=True)  # Create new file
-
-  
-
-
-
 
   

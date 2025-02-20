@@ -314,6 +314,7 @@ if model_name == 'MLP':
         random_state=seed,
         warm_start=True  # ✅ Allows model to continue training across epochs
     )
+    best_model = copy.deepcopy(model)
 
     # Early stopping parameters
     max_epochs = 300
@@ -573,6 +574,8 @@ if retrain:
             random_state=seed,
             warm_start=True  # ✅ Allows model to continue training across epochs
         )
+
+        best_model = copy.deepcopy(model)
         # Early stopping parameters
         max_epochs = 300
         patience = 10

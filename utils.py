@@ -405,4 +405,100 @@ def save_to_csv(results, file_path):
     else:
         df.to_csv(file_path, mode='w', index=False, header=True)  # Create new file
 
-  
+
+# Function to label 'outside' in the 'location_name' column for gaps between 'Front Door' and 'Back Door'
+def label_outside(df, threshold_minutes=2):
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.sort_values(by='timestamp')
+    new_rows = []
+
+    for i in range(len(df) - 1):
+        current_row = df.iloc[i]
+        next_row = df.iloc[i + 1]
+        current_time = current_row['timestamp']
+        next_time = next_row['timestamp']
+
+        # Check if the time difference exceeds the threshold
+        if (next_time - current_time).total_seconds() / 60.0 > threshold_minutes:
+            if (current_row['location_name'] in ['Front Door', 'Back Door'])  and (next_row['location_name'] in ['Front Door', 'Back Door']):
+                while (next_time - current_time).total_seconds() / 60.0 > threshold_minutes:
+                    current_time += pd.Timedelta(minutes=threshold_minutes)
+                    if current_time >= next_time:
+                        break
+                    new_row = current_row.copy()
+                    new_row['timestamp'] = current_time
+                    new_row['location_name'] = 'outside'
+                    new_rows.append(new_row)
+
+    df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True).sort_values(by='timestamp').reset_index(drop=True)
+    return df
+
+# Function to check if a time is between 10:00 PM and 8:00 AM
+def is_night(time):
+    return time >= pd.Timestamp("22:00:00").time() or time <= pd.Timestamp("08:00:00").time()
+
+# Function to fill night gaps with 'Bedroom' entries every 5 minutes
+def fill_night_gaps_with_bedroom(df, threshold_minutes=5):
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.sort_values(by='timestamp')
+
+    new_rows = []
+    for i in range(len(df) - 1):
+        current_row = df.iloc[i]
+        next_row = df.iloc[i + 1]
+        current_time = current_row['timestamp']
+        next_time = next_row['timestamp']
+
+        while (next_time - current_time).total_seconds() / 60.0 > threshold_minutes and is_night(current_time.time()):
+            current_time += pd.Timedelta(minutes=threshold_minutes)
+            if current_time >= next_time:
+                break
+            new_row = current_row.copy()
+            new_row['timestamp'] = current_time
+            new_row['location_name'] = 'Bedroom'
+            new_rows.append(new_row)
+
+    df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True).sort_values(by='timestamp').reset_index(drop=True)
+    return df
+
+# Function to fill gaps with forward fill and backward fill for specified locations
+def fill_gaps_with_forward_backward(df, threshold_minutes=3):
+    df['timestamp'] = pd.to_datetime(df['timestamp'])
+    df = df.sort_values(by='timestamp')
+
+    backward_fill_locations = ['Front Door', 'Back Door', 'Fridge Door']
+    new_rows = []
+
+    for i in range(len(df) - 1):
+        current_row = df.iloc[i]
+        next_row = df.iloc[i + 1]
+        current_time = current_row['timestamp']
+        next_time = next_row['timestamp']
+
+        if (next_time - current_time).total_seconds() / 60.0 > threshold_minutes:
+            if current_row['location_name'] in backward_fill_locations and next_row['location_name'] not in backward_fill_locations:
+                # Perform backward fill for the whole gap
+                fill_time = next_time
+                while (fill_time - current_time).total_seconds() / 60.0 > threshold_minutes:
+                    fill_time -= pd.Timedelta(minutes=threshold_minutes)
+                    if fill_time <= current_time:
+                        break
+                    new_row = next_row.copy()
+                    new_row['timestamp'] = fill_time
+                    new_row['location_name'] = next_row['location_name']
+                    new_rows.append(new_row)
+
+            else:
+                # Perform forward fill for the whole gap
+                fill_time = current_time
+                while (next_time - fill_time).total_seconds() / 60.0 > threshold_minutes:
+                    fill_time += pd.Timedelta(minutes=threshold_minutes)
+                    if fill_time >= next_time:
+                        break
+                    new_row = current_row.copy()
+                    new_row['timestamp'] = fill_time
+                    new_row['location_name'] = current_row['location_name']
+                    new_rows.append(new_row)
+
+    df = pd.concat([df, pd.DataFrame(new_rows)], ignore_index=True).sort_values(by='timestamp').reset_index(drop=True)
+    return df

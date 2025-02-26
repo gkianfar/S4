@@ -35,6 +35,9 @@ def get_args():
     parser.add_argument("--use_transition_matrix", action='store_true',
                         help="Enable the use of transition matrix (default: False).")
 
+    parser.add_argument("--only_past_observation", action='store_true',
+    help="Enable the use of past observations instead of observing all data (default: False).")                       
+
    
     # Thresholds
     parser.add_argument("--threshold", type=float, default=0.03,
@@ -63,6 +66,8 @@ threshold = args.threshold
 occurence_threshold = args.occurence_threshold
 seed = args.seed
 negative_sample_size = args.negative_sample_size
+non_agit_observe_all = not args.only_past_observation
+print('Preprocessing initiated!')
 
 filename = (
     f"clean{int(args.clean)}_"
@@ -71,6 +76,7 @@ filename = (
     f"occ{args.occurence_threshold}_"
     f"seed{args.seed}_"
     f"neg{args.negative_sample_size}"
+    f"past{int(args.only_past_observation)}"
 )
 
 # Set directory
@@ -101,30 +107,31 @@ if clean:
     labels_df = labels_df.drop(labels_df[(sleep_df['patient_id']==p) & (labels_df['date']==d)].index)
     labels_df.reset_index(drop=True, inplace=True)
 
-  if use_transition_matrix:
-    current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
-    print(f'transition matrix start: {current_time}')
-    transition_matrix, state_map_reverse = get_transition_matrix(activity_df)
-    current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
-    print(f'transition matrix end and impossible block start: {current_time}')
-    u_act = activity_df['location_name'].unique()
-    print(f'modified activities(strToint) inside function:{u_act}')
-    impossible_activity_count = get_impossible_count(activity_df,transition_matrix,threshold,occurence_threshold)
-    current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
-    print(f'drop loop start start: {current_time}')
-    for k, v in impossible_activity_count.items():
-      days_with_visitor, _ = zip(*v)
-      activity_df.drop(activity_df[(activity_df['patient_id']==k) & (activity_df['date'].isin(days_with_visitor))].index, inplace=True)
-      activity_df.reset_index(drop=True, inplace=True)
-      labels_df.drop(labels_df[(labels_df['patient_id']==k) & (labels_df['date'].isin(days_with_visitor))].index, inplace=True)
-      labels_df.reset_index(drop=True, inplace=True)
-    activity_df['location_name'] = activity_df['location_name'].map(state_map_reverse)
-    # Print a sample of transition matrix
-    print('Patient ec812 TM:')
-    s = np.sum(transition_matrix['ec812'],axis=1)
-    print(f'row-wise sum: {s}')
-    print(transition_matrix['ec812'])
-else:
+if use_transition_matrix:
+  current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
+  print(f'transition matrix start: {current_time}')
+  transition_matrix, state_map_reverse = get_transition_matrix(activity_df)
+  current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
+  print(f'transition matrix end and impossible block start: {current_time}')
+  u_act = activity_df['location_name'].unique()
+  print(f'modified activities(strToint) inside function:{u_act}')
+  impossible_activity_count = get_impossible_count(activity_df,transition_matrix,threshold,occurence_threshold)
+  current_time = datetime.now().time()  # Time only (HH:MM:SS.microseconds)
+  print(f'drop loop start start: {current_time}')
+  for k, v in impossible_activity_count.items():
+    days_with_visitor, _ = zip(*v)
+    activity_df.drop(activity_df[(activity_df['patient_id']==k) & (activity_df['date'].isin(days_with_visitor))].index, inplace=True)
+    activity_df.reset_index(drop=True, inplace=True)
+    labels_df.drop(labels_df[(labels_df['patient_id']==k) & (labels_df['date'].isin(days_with_visitor))].index, inplace=True)
+    labels_df.reset_index(drop=True, inplace=True)
+  activity_df['location_name'] = activity_df['location_name'].map(state_map_reverse)
+  # Print a sample of transition matrix
+  print('Patient ec812 TM:')
+  s = np.sum(transition_matrix['ec812'],axis=1)
+  print(f'row-wise sum: {s}')
+  print(transition_matrix['ec812'])
+
+if not clean and not use_transition_matrix:
   print('No cleaning')
 
 activity_df.reset_index(drop=True, inplace=True)
@@ -146,9 +153,9 @@ interval = 6 # backward Time Window
 # True if all past and future normal samples are consideredfor degree calculation,
 # otherwise it considers only past
 #params
-non_agit_observe_all = True
-observation_window = 14 # active when non_agit_observe_all = False
-observation_window = pd.Timedelta(days=observation_window) # The reason is that we want to limit the window for each sample to make comparisons more meaningful
+#non_agit_observe_all = True
+#observation_window = 14 # active when non_agit_observe_all = False
+#observation_window = pd.Timedelta(days=observation_window) # The reason is that we want to limit the window for each sample to make comparisons more meaningful
 
 # Set seed for Python's and Numpy's random modules
 random.seed(seed)
@@ -186,9 +193,12 @@ physiology_days = {}
 
 # Loop through the datasets to collect required data
 for id in agitation_patients:
-   agitation_days[id] = agitation_df['date'][agitation_df['patient_id'] == id].unique()
-   activity_days[id] = activity_df['date'][activity_df['patient_id'] == id].unique()
-   physiology_days[id] = physiology_df['date'][physiology_df['patient_id'] == id].unique()
+   agitation_days[id] = sorted(agitation_df['date'][agitation_df['patient_id'] == id].unique())
+   activity_days[id] = sorted(activity_df['date'][activity_df['patient_id'] == id].unique())
+   physiology_days[id] = sorted(physiology_df['date'][physiology_df['patient_id'] == id].unique())
+
+# print a sampled list
+print(agitation_days[list(agitation_days.keys())[0]])
 
 
 agitation_dataset = []
@@ -222,8 +232,7 @@ for index, (patient_id, start_time, end_time) in enumerate(zip(agitation_patient
     if non_agit_observe_all:
       patient_observed_non_agit_days = patient_non_agit_days.copy()
     else:
-      patient_observed_non_agit_days = patient_non_agit_days[((end_time.date() - observation_window) <patient_non_agit_days)
-                                                             & (patient_non_agit_days<end_time.date())]
+      patient_observed_non_agit_days = patient_non_agit_days[patient_non_agit_days<end_time.date()]
 
     agit_weekday = pd.Timestamp(end_time).day_name()
 
@@ -302,8 +311,7 @@ for index, (patient_id, start_time, end_time) in enumerate(zip(agitation_patient
         patient_observed_non_agit_days = patient_non_agit_days.copy()
         # In this case, we do not need to recalculate observed_non_agit_activity
       else:
-        patient_observed_non_agit_days = patient_non_agit_days[((day - observation_window)<patient_non_agit_days)
-                                                             & (patient_non_agit_days<day)]
+        patient_observed_non_agit_days = patient_non_agit_days[patient_non_agit_days<day]
         # separate the corresponding non agitation intervals from normal days of each patient
         observed_non_agit_activity = []
         for d in patient_observed_non_agit_days:

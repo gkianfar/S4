@@ -108,10 +108,10 @@ if clean:
           
       if (df['count'] < thr).any():  # Check if any count is below the threshold
           delete_dates = df[df['count'] < thr]['date'].tolist()
-          activity_df = activity_df.drop(activity_df[(activity_df['patient_id']==p) & (activity_df[date].isin(delete_dates))].index)
+          activity_df = activity_df.drop(activity_df[(activity_df['patient_id']==id) & (activity_df['date'].isin(delete_dates))].index)
           activity_df.reset_index(drop=True, inplace=True)
 
-          labels_df = labels_df.drop(labels_df[(labels_df['patient_id']==p) & (labels_df[date].isin(delete_dates))].index)
+          labels_df = labels_df.drop(labels_df[(labels_df['patient_id']==id) & (labels_df['date'].isin(delete_dates))].index)
           labels_df.reset_index(drop=True, inplace=True)
 
   duplicate_days = activity_df[['date','patient_id']][~activity_df.duplicated(subset=['patient_id', 'timestamp'], keep='first')]

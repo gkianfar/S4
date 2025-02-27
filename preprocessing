@@ -35,8 +35,8 @@ def get_args():
     parser.add_argument("--use_transition_matrix", action='store_true',
                         help="Enable the use of transition matrix (default: False).")
 
-    parser.add_argument("--only_past_observation", action='store_true',
-    help="Enable the use of past observations instead of observing all data (default: False).")                       
+    parser.add_argument("--gap_fill", action='store_true',
+    help="Enable filling activity gaps (default: False).")                       
 
    
     # Thresholds
@@ -66,7 +66,9 @@ threshold = args.threshold
 occurence_threshold = args.occurence_threshold
 seed = args.seed
 negative_sample_size = args.negative_sample_size
-non_agit_observe_all = not args.only_past_observation
+gap_fill = args.gap_fill
+
+non_agit_observe_all = True # We refused to set it as a variable
 print('Preprocessing initiated!')
 
 filename = (
@@ -75,9 +77,11 @@ filename = (
     f"th{args.threshold}_"
     f"occ{args.occurence_threshold}_"
     f"seed{args.seed}_"
-    f"neg{args.negative_sample_size}"
-    f"past{int(args.only_past_observation)}"
+    f"neg{args.negative_sample_size}_"
+    f"fill{int(args.gap_fill)}"
 )
+
+
 
 # Set directory
 #%cd /content/TIHM-Dataset-Visualization
@@ -95,6 +99,20 @@ activity_df = activity_df.drop_duplicates()
 physiology_df = physiology_df.drop_duplicates()
 sleep_df = sleep_df.drop_duplicates()
 
+patients = activity_df['patient_id'].unique()
+thr = 10
+
+for id in patients:
+    df = activity_df[activity_df['patient_id'] == id].groupby('date').agg(count=('location_name', 'count')).reset_index()
+        
+    if (df['count'] < thr).any():  # Check if any count is below the threshold
+        delete_dates = df[df['count'] < thr]['date'].tolist()
+        activity_df = activity_df.drop(activity_df[(activity_df['patient_id']==p) & (activity_df[date].isin(delete_dates))].index)
+        activity_df.reset_index(drop=True, inplace=True)
+
+        labels_df = labels_df.drop(labels_df[(labels_df['patient_id']==p) & (labels_df[date].isin(delete_dates))].index)
+        labels_df.reset_index(drop=True, inplace=True)
+
 if clean:
   duplicate_days = activity_df[['date','patient_id']][~activity_df.duplicated(subset=['patient_id', 'timestamp'], keep='first')]
   patients = duplicate_days['patient_id'].unique()
@@ -104,7 +122,7 @@ if clean:
     activity_df = activity_df.drop(activity_df[(activity_df['patient_id']==p) & (activity_df['date']==d)].index)
     activity_df.reset_index(drop=True, inplace=True)
 
-    labels_df = labels_df.drop(labels_df[(sleep_df['patient_id']==p) & (labels_df['date']==d)].index)
+    labels_df = labels_df.drop(labels_df[(labels_df['patient_id']==p) & (labels_df['date']==d)].index)
     labels_df.reset_index(drop=True, inplace=True)
 
 if use_transition_matrix:
@@ -139,6 +157,23 @@ sleep_patients = np.unique(sleep_df['patient_id'])
 activity_patients = np.unique(activity_df['patient_id'])
 physiology_patients = np.unique(physiology_df['patient_id'])
 physiology_parameters = np.unique(physiology_df['device_type'])
+
+# Filling missing data gaps in activity_df
+repaired_activity_df = []
+if gap_fill:
+  for id in activity_patients:
+    id_activity_df = activity_df[activity_df['patient_id']==id]
+    # Step 1: Label 'outside' gaps for front and back doors
+    id_repaired_activity_df = label_outside(id_activity_df, threshold_minutes=2)
+
+    # Step 2: Fill night gaps with 'Bedroom'
+    id_repaired_activity_df = fill_night_gaps_with_bedroom(id_repaired_activity_df, threshold_minutes=5)
+
+    # Step 3: Fill gaps with forward and backward fills
+    id_repaired_activity_df = fill_gaps_with_forward_backward(id_repaired_activity_df, threshold_minutes=3)
+    repaired_activity_df.append(id_repaired_activity_df)
+
+  activity_df = pd.concat(repaired_activity_df).sort_values(by='timestamp').reset_index(drop=True)
 
 
 ## Data arrangement

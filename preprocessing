@@ -100,6 +100,7 @@ physiology_df = physiology_df.drop_duplicates()
 sleep_df = sleep_df.drop_duplicates()
 
 if clean:
+  """
   patients = activity_df['patient_id'].unique()
   thr = 10
 
@@ -113,7 +114,7 @@ if clean:
 
           labels_df = labels_df.drop(labels_df[(labels_df['patient_id']==id) & (labels_df['date'].isin(delete_dates))].index)
           labels_df.reset_index(drop=True, inplace=True)
-
+  """
   duplicate_days = activity_df[['date','patient_id']][~activity_df.duplicated(subset=['patient_id', 'timestamp'], keep='first')]
   patients = duplicate_days['patient_id'].unique()
   dates = duplicate_days['date']
